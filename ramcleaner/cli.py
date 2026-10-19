@@ -117,7 +117,11 @@ def _format_row(usage: OwnerUsage) -> str:
     ram_mb = usage.ram_bytes / (1024 * 1024)
     swap_mb = usage.swap_bytes / (1024 * 1024)
     held = f"{usage.held_by.comm} (pid {usage.held_by.pid})"
-    return f"{usage.owner.label:<32}  {held:<28}  {ram_mb:7.1f} MB RAM  {swap_mb:7.1f} MB swap"
+    row = f"{usage.owner.label:<32}  {held:<28}  {ram_mb:7.1f} MB RAM  {swap_mb:7.1f} MB swap"
+    if usage.zswap_bytes > 0:
+        zswap_mb = usage.zswap_bytes / (1024 * 1024)
+        row += f"  {zswap_mb:7.1f} MB in zswap"
+    return row
 
 
 def _scan_and_detect(

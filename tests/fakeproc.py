@@ -68,7 +68,7 @@ def write_proc(proc_root: str | Path, spec: Mapping[str, Any]) -> Path:
 def build_tree(
     root: str | Path,
     procs: Iterable[Mapping[str, Any]],
-    cgroups: Mapping[str, tuple[int, int]] | None = None,
+    cgroups: Mapping[str, tuple[int, int] | tuple[int, int, int]] | None = None,
     uptime: float = 100000.0,
 ) -> tuple[Path, Path]:
     base = Path(root)
@@ -81,11 +81,14 @@ def build_tree(
     for spec in procs:
         write_proc(proc_root, spec)
 
-    for cg_path, (cur_bytes, swap_bytes) in (cgroups or {}).items():
+    for cg_path, values in (cgroups or {}).items():
+        cur_bytes, swap_bytes, *rest = values
         cg_dir = cgroup_root / cg_path.lstrip("/")
         cg_dir.mkdir(parents=True, exist_ok=True)
         (cg_dir / "memory.current").write_text(f"{cur_bytes}\n", encoding="utf-8")
         (cg_dir / "memory.stat").write_text(f"anon {cur_bytes}\nfile 0\n", encoding="utf-8")
         (cg_dir / "memory.swap.current").write_text(f"{swap_bytes}\n", encoding="utf-8")
+        if rest:
+            (cg_dir / "memory.zswap.current").write_text(f"{rest[0]}\n", encoding="utf-8")
 
     return proc_root, cgroup_root

@@ -77,18 +77,26 @@ class ProcscanTest(unittest.TestCase):
 
     def test_read_cgroup_memory(self) -> None:
         cg_path = "/user.slice/user-1000.slice/user@1000.service/app.slice/app-foo-1.scope"
+        zswap_cg_path = "/user.slice/user-1000.slice/user@1000.service/app.slice/app-bar-1.scope"
         with tempfile.TemporaryDirectory() as tmp:
             _, cgroup_root = build_tree(
                 tmp,
                 [],
-                cgroups={cg_path: (1048576, 524288)},
+                cgroups={
+                    cg_path: (1048576, 524288),
+                    zswap_cg_path: (2097152, 1048576, 262144),
+                },
             )
-            self.assertEqual(read_cgroup_memory(cgroup_root, cg_path), (1048576, 524288))
+            self.assertEqual(read_cgroup_memory(cgroup_root, cg_path), (1048576, 524288, 0))
+            self.assertEqual(
+                read_cgroup_memory(cgroup_root, zswap_cg_path),
+                (2097152, 1048576, 262144),
+            )
             self.assertIsNone(read_cgroup_memory(cgroup_root, "/missing.scope"))
             cg_dir = cgroup_root / cg_path.lstrip("/")
             (cg_dir / "memory.current").write_text("9999999999\n", encoding="utf-8")
             (cg_dir / "memory.stat").write_text("file 9999999999\nanon 1048576\n", encoding="utf-8")
-            self.assertEqual(read_cgroup_memory(cgroup_root, cg_path), (1048576, 524288))
+            self.assertEqual(read_cgroup_memory(cgroup_root, cg_path), (1048576, 524288, 0))
             for contents in ("file 99\n", "anon bad\n", "anon\n"):
                 with self.subTest(contents=contents):
                     (cg_dir / "memory.stat").write_text(contents, encoding="utf-8")

@@ -36,6 +36,7 @@ class OwnerUsage:
     swap_kb: int
     cgroup_bytes: int | None
     cgroup_swap_bytes: int | None
+    cgroup_zswap_bytes: int | None
     held_by: Proc
 
     @property
@@ -53,6 +54,10 @@ class OwnerUsage:
         if self.cgroup_swap_bytes is not None:
             return self.cgroup_swap_bytes
         return self.swap_kb * 1024
+
+    @property
+    def zswap_bytes(self) -> int:
+        return self.cgroup_zswap_bytes or 0
 
     @property
     def total_bytes(self) -> int:
@@ -181,6 +186,7 @@ def group_by_owner(
         cg_mem = read_cgroup_memory(cgroup_root, owner_cg)
         cg_bytes = cg_mem[0] if cg_mem is not None else None
         cg_swap_bytes = cg_mem[1] if cg_mem is not None else None
+        cg_zswap_bytes = cg_mem[2] if cg_mem is not None else None
         held_by = _pick_held_by(members)
 
         usages.append(
@@ -191,6 +197,7 @@ def group_by_owner(
                 swap_kb=swap_kb,
                 cgroup_bytes=cg_bytes,
                 cgroup_swap_bytes=cg_swap_bytes,
+                cgroup_zswap_bytes=cg_zswap_bytes,
                 held_by=held_by,
             )
         )
@@ -202,7 +209,11 @@ def group_by_owner(
 
 def _without_nested(usage: OwnerUsage, usages: list[OwnerUsage]) -> OwnerUsage:
     # A terminal's scope counts its tabs' memory too; each tab is reported on its own row.
-    if usage.cgroup_bytes is None or usage.cgroup_swap_bytes is None:
+    if (
+        usage.cgroup_bytes is None
+        or usage.cgroup_swap_bytes is None
+        or usage.cgroup_zswap_bytes is None
+    ):
         return usage
     prefix = usage.cgroup.rstrip("/") + "/"
     nested = [u for u in usages if u.cgroup.startswith(prefix)]
@@ -212,4 +223,5 @@ def _without_nested(usage: OwnerUsage, usages: list[OwnerUsage]) -> OwnerUsage:
         usage,
         cgroup_bytes=max(usage.cgroup_bytes - sum(u.ram_bytes for u in nested), 0),
         cgroup_swap_bytes=max(usage.cgroup_swap_bytes - sum(u.swap_bytes for u in nested), 0),
+        cgroup_zswap_bytes=max(usage.cgroup_zswap_bytes - sum(u.zswap_bytes for u in nested), 0),
     )

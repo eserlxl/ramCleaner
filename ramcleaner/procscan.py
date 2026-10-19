@@ -122,7 +122,7 @@ def scan_processes(
 def read_cgroup_memory(
     cgroup_root: str | Path,
     cgroup_path: str,
-) -> tuple[int, int] | None:
+) -> tuple[int, int, int] | None:
     rel = cgroup_path.strip("/")
     if not rel:
         return None
@@ -131,9 +131,13 @@ def read_cgroup_memory(
         stats = (cg_dir / "memory.stat").read_text(encoding="utf-8").splitlines()
         anon = next(int(line.split()[1]) for line in stats if line.split()[:1] == ["anon"])
         swap = int((cg_dir / "memory.swap.current").read_text(encoding="utf-8").strip())
+        try:
+            zswap = int((cg_dir / "memory.zswap.current").read_text(encoding="utf-8").strip())
+        except FileNotFoundError:
+            zswap = 0
     except (OSError, ValueError, IndexError, StopIteration):
         return None
-    return anon, swap
+    return anon, swap, zswap
 
 
 def read_uptime(proc_root: str | Path) -> float:

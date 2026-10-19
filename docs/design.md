@@ -24,8 +24,9 @@ Per process: pid, ppid, state (`/proc/PID/stat`), comm, cmdline, uid, `VmRSS`, `
 (`/proc/PID/status`), cumulative CPU ticks (utime + stime) and start time, and the cgroup path
 (`/proc/PID/cgroup`, the v2 `0::` line). Processes that vanish mid-scan are skipped, never an error.
 
-Per cgroup: the `anon` line of `memory.stat` and `memory.swap.current`. RAM means anonymous
-memory; reclaimable page cache is excluded.
+Per cgroup: the `anon` line of `memory.stat`, `memory.swap.current`, and `memory.zswap.current` (0
+when absent on kernels without zswap). RAM means anonymous memory; reclaimable page cache is
+excluded, and zswap is the compressed share of swap still held in RAM.
 
 Only the invoking user's processes are considered.
 

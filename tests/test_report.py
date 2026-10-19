@@ -218,6 +218,70 @@ class ReportTest(unittest.TestCase):
                 self.assertIn(key, stderr.getvalue())
                 scan.assert_not_called()
 
+    def test_report_shows_zswap_suffix_only_when_present(self) -> None:
+        yakuake_cg = (
+            "/user.slice/user-1000.slice/user@1000.service/app.slice/"
+            "app-org.kde.yakuake-850410.scope"
+        )
+        yakuake_tab_cg = f"{yakuake_cg}/tab(850422).scope"
+        kwin_cg = (
+            "/user.slice/user-1000.slice/user@1000.service/session.slice/"
+            "plasma-kwin_wayland.service"
+        )
+        proc_root, cgroup_root = build_tree(
+            self.root,
+            [
+                {
+                    "pid": 850410,
+                    "ppid": 1,
+                    "comm": "yakuake",
+                    "rss_kb": 90000,
+                    "swap_kb": 0,
+                    "cgroup": yakuake_cg,
+                },
+                {
+                    "pid": 850500,
+                    "ppid": 1,
+                    "comm": "codex",
+                    "rss_kb": 120000,
+                    "swap_kb": 40000,
+                    "cgroup": yakuake_tab_cg,
+                },
+                {
+                    "pid": 1200,
+                    "ppid": 1,
+                    "comm": "kwin_wayland",
+                    "rss_kb": 250000,
+                    "swap_kb": 0,
+                    "cgroup": kwin_cg,
+                },
+            ],
+            cgroups={
+                yakuake_cg: (1100 * 1024**2, 700 * 1024**2, 150 * 1024**2),
+                yakuake_tab_cg: (1000 * 1024**2, 700 * 1024**2, 150 * 1024**2),
+                kwin_cg: (250 * 1024**2, 0),
+            },
+        )
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            rc = main(
+                [
+                    "report",
+                    "--proc-root",
+                    str(proc_root),
+                    "--cgroup-root",
+                    str(cgroup_root),
+                    "--interval",
+                    "0",
+                ]
+            )
+        self.assertEqual(rc, 0)
+        rows = stdout.getvalue().splitlines()[1:4]
+        self.assertTrue(rows[0].startswith("org.kde.yakuake tab 850422"))
+        self.assertTrue(rows[0].endswith("  1000.0 MB RAM    700.0 MB swap    150.0 MB in zswap"))
+        for row in rows[1:]:
+            self.assertNotIn("zswap", row)
+
 
 if __name__ == "__main__":
     unittest.main()
