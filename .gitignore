@@ -1,0 +1,5 @@
+.remember/
+.planwright/
+.qb/
+__pycache__/
+*.pyc
