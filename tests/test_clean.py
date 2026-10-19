@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from ramcleaner.actions import StopResult
 from ramcleaner.cli import main
@@ -125,7 +125,7 @@ class CleanTest(unittest.TestCase):
                 ):
                     rc = main(argv)
                 self.assertEqual(rc, 0)
-                mock_input.assert_called_once_with("Stop it? [y/N] ")
+                mock_input.assert_called_once_with("Stop it? [y/N/d] ")
                 self.assertEqual(mock_stop.call_count, 1)
                 self.assertEqual(mock_stop.call_args.kwargs["force"], force)
                 output = stdout.getvalue()
@@ -187,6 +187,40 @@ class CleanTest(unittest.TestCase):
         self.assertEqual(rc, 1)
         mock_stop.assert_called_once()
         self.assertIn("14", stdout.getvalue())
+
+    def test_details_then_decline_lists_procs_and_does_not_stop(self) -> None:
+        stdout = io.StringIO()
+        with (
+            patch("ramcleaner.cli.sys.stdin.isatty", return_value=True),
+            patch("builtins.input", side_effect=["d", "n"]) as mock_input,
+            patch("ramcleaner.cli.stop_finding") as mock_stop,
+            redirect_stdout(stdout),
+        ):
+            rc = main(
+                [
+                    "clean",
+                    "--interval",
+                    "0",
+                    "--proc-root",
+                    str(self.proc_root),
+                    "--cgroup-root",
+                    str(self.cgroup_root),
+                ]
+            )
+        self.assertEqual(rc, 0)
+        self.assertEqual(mock_input.call_count, 2)
+        mock_input.assert_has_calls(
+            [
+                call("Stop it? [y/N/d] "),
+                call("Stop it? [y/N/d] "),
+            ]
+        )
+        mock_stop.assert_not_called()
+        output = stdout.getvalue()
+        for pid in range(10, 15):
+            self.assertIn(str(pid), output)
+            self.assertIn(f"  {pid}  400 MB  bun /opt/context-mode/start.mjs", output)
+        self.assertIn("bun /opt/context-mode/start.mjs", output)
 
 
 if __name__ == "__main__":

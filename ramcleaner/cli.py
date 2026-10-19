@@ -154,20 +154,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         exit_code = 0
         for finding in findings:
             print(format_finding(finding))
-            try:
-                answer = input("Stop it? [y/N] ")
-            except EOFError:
-                answer = ""
-            if answer.strip().lower() in ("y", "yes"):
-                result = stop_finding(
-                    finding,
-                    config,
-                    proc_root=args.proc_root,
-                    force=args.force,
-                )
-                print(format_stop_result(result))
-                if result.still_alive:
-                    exit_code = 1
+            while True:
+                try:
+                    answer = input("Stop it? [y/N/d] ")
+                except EOFError:
+                    answer = ""
+                choice = answer.strip().lower()
+                if choice in ("d", "details"):
+                    for proc in finding.procs:
+                        mb = (proc.rss_kb + proc.swap_kb) // 1024
+                        cmd = " ".join(proc.cmdline) or proc.comm
+                        print(f"  {proc.pid}  {mb} MB  {cmd}")
+                    continue
+                if choice in ("y", "yes"):
+                    result = stop_finding(
+                        finding,
+                        config,
+                        proc_root=args.proc_root,
+                        force=args.force,
+                    )
+                    print(format_stop_result(result))
+                    if result.still_alive:
+                        exit_code = 1
+                break
         return exit_code
 
     return 0

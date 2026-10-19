@@ -63,7 +63,7 @@ options:
 
 Requires an interactive terminal (`sys.stdin.isatty()`). Takes two samples `--interval` seconds apart and prints `Findings: none` when nothing is detected.
 
-For each finding, `clean` prints the finding line and prompts `Stop it? [y/N] `. Only `y` or `yes` (case-insensitive) approves stopping; any other input or `EOF` skips the finding. After stopping an approved finding, `clean` prints:
+For each finding, `clean` prints the finding line and prompts `Stop it? [y/N/d] `. Answering `d` or `details` prints one line per process in the finding (`  <pid>  <rss+swap MB> MB  <' '.join(cmdline) or comm>`) and re-prompts. Only `y` or `yes` (case-insensitive) approves stopping; any other input or `EOF` skips the finding. After stopping an approved finding, `clean` prints:
 
 ```text
 method=<method>  stopped=<pids>  still_alive=<pids>  skipped=<pid (reason), ...>
