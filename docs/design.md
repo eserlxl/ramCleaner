@@ -89,10 +89,14 @@ Stopping is per finding and only after approval.
 ## Interfaces
 
 - `ramcleaner report` — memory by owner, then the findings. Reads history without writing it;
-  `--history-file` overrides the default state path.
-- `ramcleaner clean [--force]` — the findings, one `Stop it? [y/N] ` question each, then stops the
-  approved ones. Refuses with exit 2 if stdin is not a tty; exits 0 when nothing is approved or
-  every approved stop leaves no survivors, and 1 if any survivor remains.
+  `--history-file` overrides the default state path. While fewer than 4 watch scans are recorded
+  within `history_hours`, a note on stderr says growth and zombie checks are not yet possible.
+- `ramcleaner clean [--force]` — the findings, one `Stop it? [y/N/d] ` question each (`d` lists the
+  finding's processes and asks again), then stops the approved ones. Refuses with exit 2 if stdin is
+  not a tty; exits 0 when nothing is approved or every approved stop leaves no survivors, and 1 if
+  any survivor remains. Prints the same short-history note as `report`.
+- `ramcleaner ignored [--clear]` — lists the findings `watch` has suppressed in `ignored.json`, or
+  with `--clear` empties the file under `watch.lock` so the next run asks again.
 - `ramcleaner watch` — one scan for the systemd user timer (`ramcleaner-watch.timer` and
   `ramcleaner-watch.service`, `Type=oneshot` with `TimeoutStartSec=infinity`); guarded by
   `watch.lock`, records history, and turns each new finding into a desktop notification with "Stop"
