@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from ramcleaner.detect import Finding
 
 _BASE_ARGV = ("notify-send", "--app-name=ramCleaner", "--urgency=normal")
+_INFORM_TIMEOUT_S = 10.0
 
 
 def _format_notification(finding: Finding) -> tuple[str, str]:
@@ -74,7 +75,23 @@ class NotifySend:
         argv = [*_BASE_ARGV, summary, body]
         try:
             proc = subprocess.Popen(argv, stdout=subprocess.PIPE, text=True)
-            proc.communicate()
+            try:
+                proc.communicate(timeout=_INFORM_TIMEOUT_S)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                try:
+                    proc.communicate(timeout=_INFORM_TIMEOUT_S)
+                except (subprocess.TimeoutExpired, OSError):
+                    if proc.stdout is not None and not proc.stdout.closed:
+                        proc.stdout.close()
+                    try:
+                        proc.wait(timeout=_INFORM_TIMEOUT_S)
+                    except (subprocess.TimeoutExpired, OSError) as exc:
+                        print(
+                            f"Warning: failed to reap notify-send: {exc}",
+                            file=sys.stderr,
+                        )
+                        return
         except OSError as exc:
             print(f"Warning: notify-send unavailable: {exc}", file=sys.stderr)
             return
