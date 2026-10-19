@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import re
+import shlex
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,10 +49,28 @@ def _default_config_path() -> Path:
     return base / "ramcleaner" / "config.toml"
 
 
+def _validate_stop_rule(pattern: str, command: str) -> tuple[str, str]:
+    try:
+        re.compile(pattern)
+    except re.error as exc:
+        raise ConfigError(
+            f"Invalid regex pattern {pattern!r} in 'stop_rules': {exc}"
+        ) from exc
+    try:
+        tokens = shlex.split(command)
+    except ValueError as exc:
+        raise ConfigError(
+            f"Invalid command in 'stop_rules': {command!r} ({exc})"
+        ) from exc
+    if not tokens:
+        raise ConfigError(f"Empty command in 'stop_rules': {command!r}")
+    return (pattern, command)
+
+
 def _parse_stop_rules(raw: Any) -> tuple[tuple[str, str], ...]:
     if isinstance(raw, dict):
         if all(isinstance(k, str) and isinstance(v, str) for k, v in raw.items()):
-            return tuple((k, v) for k, v in raw.items())
+            return tuple(_validate_stop_rule(k, v) for k, v in raw.items())
         raise ConfigError("Invalid type for key 'stop_rules'")
     if isinstance(raw, list):
         pairs: list[tuple[str, str]] = []
@@ -61,14 +81,14 @@ def _parse_stop_rules(raw: Any) -> tuple[tuple[str, str], ...]:
                 and isinstance(item[0], str)
                 and isinstance(item[1], str)
             ):
-                pairs.append((item[0], item[1]))
+                pairs.append(_validate_stop_rule(item[0], item[1]))
             elif (
                 isinstance(item, dict)
                 and set(item.keys()) == {"pattern", "command"}
                 and isinstance(item["pattern"], str)
                 and isinstance(item["command"], str)
             ):
-                pairs.append((item["pattern"], item["command"]))
+                pairs.append(_validate_stop_rule(item["pattern"], item["command"]))
             else:
                 raise ConfigError("Invalid type for key 'stop_rules'")
         return tuple(pairs)

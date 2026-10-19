@@ -71,6 +71,52 @@ class ConfigTest(unittest.TestCase):
                         load_config(cfg_path)
                     self.assertIn("ask_timeout_minutes", str(ctx.exception))
 
+    def test_valid_stop_rules_shapes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_path = Path(tmp) / "config.toml"
+            cfg_path.write_text(
+                '[[stop_rules]]\n'
+                'pattern = "app1"\n'
+                'command = "stop-app1"\n'
+                '[[stop_rules]]\n'
+                'pattern = "app2"\n'
+                'command = "stop-app2"\n',
+                encoding="utf-8",
+            )
+            cfg = load_config(cfg_path)
+            self.assertEqual(
+                cfg.stop_rules,
+                (("app1", "stop-app1"), ("app2", "stop-app2")),
+            )
+
+            cfg_path.write_text(
+                '[stop_rules]\n'
+                '"app3" = "stop-app3"\n',
+                encoding="utf-8",
+            )
+            cfg = load_config(cfg_path)
+            self.assertEqual(cfg.stop_rules, (("app3", "stop-app3"),))
+
+    def test_invalid_stop_rules_pattern_raises_config_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_path = Path(tmp) / "config.toml"
+            cfg_path.write_text('stop_rules = [["(", "true"]]\n', encoding="utf-8")
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(cfg_path)
+            self.assertIn("(", str(ctx.exception))
+
+    def test_invalid_stop_rules_command_raises_config_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_path = Path(tmp) / "config.toml"
+            for cmd in ('""', '"   "', '"echo \'unbalanced"'):
+                with self.subTest(cmd=cmd):
+                    cfg_path.write_text(
+                        f"stop_rules = [['valid-pattern', {cmd}]]\n",
+                        encoding="utf-8",
+                    )
+                    with self.assertRaises(ConfigError):
+                        load_config(cfg_path)
+
 
 if __name__ == "__main__":
     unittest.main()
