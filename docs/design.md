@@ -58,8 +58,9 @@ with an id, the processes involved, their RSS and swap, and a one-line reason.
    tab or window.
 2. **Unreaped zombies.** A zombie whose parent is alive and that has been a zombie in two scans in
    a row; the fix is on the parent, so the finding names the parent.
-3. **Growth.** A process whose RSS + swap grew in every recorded scan over the history window
-   (default 24 h, at least 4 scans) and by at least `min_growth_mb` (default 512). History lives in
+3. **Growth.** A process whose RSS + swap grew by at least `min_growth_mb` (default 512) over the
+   history window (default 24 h, at least 4 recorded scans plus the current sample) with no step
+   shrinking by more than 1 % of the previous size. History lives in
    `$XDG_STATE_HOME/ramcleaner/history.json` (default `~/.local/state/ramcleaner/`), pruned to the
    window.
 

@@ -55,6 +55,7 @@ def detect(
     clk_tck: int,
     history: list[dict],
     cgroup_root: str | Path,
+    now: float | None = None,
 ) -> list[Finding]:
     eligible = {
         pid: proc for pid, proc in second.items()
@@ -120,7 +121,8 @@ def detect(
             procs=(parent,),
         ))
 
-    now = time.time()
+    if now is None:
+        now = time.time()
     recent = sorted(
         (entry for entry in history if now - config.history_hours * 3600 <= entry["time"] <= now),
         key=lambda entry: entry["time"],
@@ -131,7 +133,7 @@ def detect(
         sizes.append(proc.rss_kb + proc.swap_kb)
         if (
             len(sizes) >= 5
-            and all(after > before for before, after in pairwise(sizes))
+            and all(after * 100 >= before * 99 for before, after in pairwise(sizes))
             and sizes[-1] - sizes[0] >= config.min_growth_mb * 1024
         ):
             owner, _ = resolve_owner(proc.cgroup)

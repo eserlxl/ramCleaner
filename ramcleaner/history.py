@@ -54,11 +54,8 @@ def load_history(path: str | Path) -> list[dict]:
         return []
 
 
-def append_scan(path: str | Path, entry: dict, keep_hours: float, now: float) -> None:
+def write_json_atomic(path: str | Path, data: object) -> None:
     path = Path(path)
-    cutoff = now - keep_hours * 3600
-    entries = [item for item in [*load_history(path), entry] if item["time"] >= cutoff]
-    entries.sort(key=lambda item: item["time"])
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path: Path | None = None
     try:
@@ -66,8 +63,16 @@ def append_scan(path: str | Path, entry: dict, keep_hours: float, now: float) ->
             mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
         ) as stream:
             temp_path = Path(stream.name)
-            json.dump(entries, stream)
+            json.dump(data, stream)
         os.replace(temp_path, path)
     finally:
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)
+
+
+def append_scan(path: str | Path, entry: dict, keep_hours: float, now: float) -> None:
+    path = Path(path)
+    cutoff = now - keep_hours * 3600
+    entries = [item for item in [*load_history(path), entry] if item["time"] >= cutoff]
+    entries.sort(key=lambda item: item["time"])
+    write_json_atomic(path, entries)

@@ -7,12 +7,14 @@ import sys
 import time
 from collections.abc import Sequence
 
-from ramcleaner.actions import StopResult, stop_finding
+from ramcleaner.actions import stop_finding
 from ramcleaner.config import Config, ConfigError, load_config
 from ramcleaner.detect import Finding, detect
 from ramcleaner.history import default_history_path, load_history
+from ramcleaner.notify import NotifySend
 from ramcleaner.owner import OwnerUsage, group_by_owner
 from ramcleaner.procscan import Proc, clock_ticks, read_uptime, scan_processes
+from ramcleaner.watch import format_finding, format_stop_result, run_watch
 
 
 def _add_scan_options(subparser: argparse.ArgumentParser) -> None:
@@ -78,6 +80,12 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Send SIGKILL to processes that survive SIGTERM.",
     )
+
+    watch_p = subparsers.add_parser(
+        "watch",
+        help="Scan once, record history, and notify about new findings.",
+    )
+    _add_scan_options(watch_p)
     return parser
 
 
@@ -86,26 +94,6 @@ def _format_row(usage: OwnerUsage) -> str:
     swap_mb = usage.swap_bytes / (1024 * 1024)
     held = f"{usage.held_by.comm} (pid {usage.held_by.pid})"
     return f"{usage.owner.label:<32}  {held:<28}  {ram_mb:7.1f} MB RAM  {swap_mb:7.1f} MB swap"
-
-
-def _format_finding(finding: Finding) -> str:
-    return (
-        f"{finding.rule}  {finding.owner_label}  {len(finding.pids)} pids  "
-        f"{finding.rss_kb / 1024:.1f} MB RAM  {finding.swap_kb / 1024:.1f} MB swap  "
-        f"{finding.reason}"
-    )
-
-
-def _format_stop_result(result: StopResult) -> str:
-    stopped = ", ".join(str(pid) for pid in result.stopped) or "none"
-    alive = ", ".join(str(pid) for pid in result.still_alive) or "none"
-    skipped = (
-        ", ".join(f"{pid} ({reason})" for pid, reason in result.skipped) or "none"
-    )
-    return (
-        f"method={result.method}  stopped={stopped}  "
-        f"still_alive={alive}  skipped={skipped}"
-    )
 
 
 def _scan_and_detect(
@@ -132,7 +120,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    if args.command in ("report", "clean"):
+    if args.command in ("report", "clean", "watch"):
         if not math.isfinite(args.interval) or args.interval < 0:
             parser.error("--interval must be finite and non-negative")
         if args.command == "clean" and not sys.stdin.isatty():
@@ -145,6 +133,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             config = load_config()
         except (ConfigError, OSError) as exc:
             parser.error(str(exc))
+
+        if args.command == "watch":
+            return run_watch(args, config, notifier=NotifySend())
+
         procs, findings = _scan_and_detect(args, config)
 
         if args.command == "report":
@@ -154,7 +146,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(_format_row(usage))
             print("Findings:" if findings else "Findings: none")
             for finding in findings:
-                print(_format_finding(finding))
+                print(format_finding(finding))
             return 0
 
         if not findings:
@@ -162,7 +154,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         exit_code = 0
         for finding in findings:
-            print(_format_finding(finding))
+            print(format_finding(finding))
             try:
                 answer = input("Stop it? [y/N] ")
             except EOFError:
@@ -174,7 +166,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     proc_root=args.proc_root,
                     force=args.force,
                 )
-                print(_format_stop_result(result))
+                print(format_stop_result(result))
                 if result.still_alive:
                     exit_code = 1
         return exit_code

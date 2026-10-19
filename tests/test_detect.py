@@ -143,12 +143,14 @@ class DetectTest(unittest.TestCase):
 
     def test_growth(self) -> None:
         proc = replace(self.procs[10], rss_kb=548 * 1024, swap_kb=64 * 1024)
-        finding, = self.findings(second={10: proc}, history=self.growth_history())
-        self.assertEqual(finding.rule, "growth")
-        self.assertEqual(finding.key, "growth:10:100")
-        self.assertEqual(finding.pids, (10,))
-        self.assertEqual(finding.procs, (proc,))
-        self.assertIn("512.0 MB", finding.reason)
+        for sizes in ((100, 200, 300, 400), (100, 200, 200, 400), (100, 200, 198, 400)):
+            with self.subTest(sizes=sizes):
+                finding, = self.findings(second={10: proc}, history=self.growth_history(sizes))
+                self.assertEqual(finding.rule, "growth")
+                self.assertEqual(finding.key, "growth:10:100")
+                self.assertEqual(finding.pids, (10,))
+                self.assertEqual(finding.procs, (proc,))
+                self.assertIn("512.0 MB", finding.reason)
 
     def test_growth_thresholds_and_identity(self) -> None:
         proc = replace(self.procs[10], rss_kb=548 * 1024, swap_kb=64 * 1024)
@@ -156,7 +158,7 @@ class DetectTest(unittest.TestCase):
         cases = (
             (history[:3], proc),
             (self.growth_history((100, 300, 200, 400)), proc),
-            (self.growth_history((100, 200, 200, 400)), proc),
+            (self.growth_history((100, 200, 197, 400)), proc),
             (history, replace(proc, rss_kb=547 * 1024)),
             (history, replace(proc, start_ticks=101)),
             ([{**entry, "time": entry["time"] - 86400} for entry in history], proc),
