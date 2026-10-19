@@ -26,7 +26,9 @@ Per process: pid, ppid, state (`/proc/PID/stat`), comm, cmdline, uid, `VmRSS`, `
 
 Per cgroup: the `anon` line of `memory.stat`, `memory.swap.current`, and `memory.zswap.current` (0
 when absent on kernels without zswap). RAM means anonymous memory; reclaimable page cache is
-excluded, and zswap is the compressed share of swap still held in RAM.
+excluded, and zswap is the compressed share of swap still held in RAM. When an owner cgroup's
+`memory.stat` or `memory.swap.current` cannot be read, its row falls back to the summed `VmRSS`
+and `VmSwap` of its processes, which includes file-backed pages.
 
 Only the invoking user's processes are considered.
 
@@ -40,9 +42,9 @@ The owner of a process is derived from its cgroup path, not its parent:
   `<pid>`": each tab runs unrelated work, and a daemon started from a tab stays in it.
 - `<name>.service` under `app.slice` or `session.slice` → the unit `<name>`.
 
-A finding names both the owner and the process that is really responsible (the root of the
-process subtree inside that cgroup), so the report can say "charged to org.kde.yakuake, held by
-`codex app-server`".
+Each report row names both the owner and the process that is really responsible (the root of the
+heaviest process subtree inside that cgroup, followed down to the child holding most of it), so the
+report can say "charged to org.kde.yakuake, held by `codex app-server`".
 
 ## Detection rules
 
