@@ -32,7 +32,10 @@ from ramcleaner.watch import (
 )
 
 
-def _add_scan_options(subparser: argparse.ArgumentParser) -> None:
+def _add_scan_options(
+    subparser: argparse.ArgumentParser,
+    history_help: str = "History file to read (default: XDG state directory).",
+) -> None:
     subparser.add_argument(
         "--interval",
         type=float,
@@ -42,7 +45,7 @@ def _add_scan_options(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument(
         "--history-file",
         default=default_history_path(),
-        help="History file to read (default: XDG state directory).",
+        help=history_help,
     )
     subparser.add_argument(
         "--proc-root",
@@ -100,7 +103,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "watch",
         help="Scan once, record history, and notify about new findings.",
     )
-    _add_scan_options(watch_p)
+    _add_scan_options(
+        watch_p,
+        "History file to read and append each scan to (default: XDG state directory).",
+    )
 
     ignored_p = subparsers.add_parser(
         "ignored",
@@ -109,7 +115,8 @@ def _build_parser() -> argparse.ArgumentParser:
     ignored_p.add_argument(
         "--history-file",
         default=default_history_path(),
-        help="History file to read (default: XDG state directory).",
+        help="History file whose directory holds ignored.json and watch.lock "
+        "(default: XDG state directory).",
     )
     ignored_p.add_argument(
         "--clear",

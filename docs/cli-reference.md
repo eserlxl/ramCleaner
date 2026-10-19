@@ -82,7 +82,8 @@ options:
   -h, --help            show this help message and exit
   --interval INTERVAL   Seconds between CPU samples (default: 2.0).
   --history-file HISTORY_FILE
-                        History file to read (default: XDG state directory).
+                        History file to read and append each scan to (default:
+                        XDG state directory).
 ```
 
 Runs a single scan pass intended for `ramcleaner-watch.service`:
@@ -101,7 +102,8 @@ usage: ramcleaner ignored [-h] [--history-file HISTORY_FILE] [--clear]
 options:
   -h, --help            show this help message and exit
   --history-file HISTORY_FILE
-                        History file to read (default: XDG state directory).
+                        History file whose directory holds ignored.json and
+                        watch.lock (default: XDG state directory).
   --clear               Clear all suppressed findings.
 ```
 

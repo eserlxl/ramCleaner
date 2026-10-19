@@ -191,6 +191,21 @@ class ReportTest(unittest.TestCase):
             main(["report", "--proc-root", str(proc_root), "--cgroup-root", str(cgroup_root)])
         sleep.assert_called_once_with(2.0)
 
+    def test_history_file_help_states_what_each_subcommand_does_with_it(self) -> None:
+        docs = " ".join((Path(__file__).resolve().parents[1] / "docs" / "cli-reference.md")
+                        .read_text(encoding="utf-8").split())
+        for command, phrase in (
+            ("report", "History file to read (default: XDG state directory)."),
+            ("watch", "History file to read and append each scan to"),
+            ("ignored", "History file whose directory holds ignored.json and watch.lock"),
+        ):
+            with self.subTest(command=command):
+                stdout = io.StringIO()
+                with redirect_stdout(stdout), self.assertRaises(SystemExit):
+                    main([command, "--help"])
+                self.assertIn(phrase, " ".join(stdout.getvalue().split()))
+                self.assertIn(phrase, docs)
+
     def test_report_rejects_invalid_intervals_before_scanning(self) -> None:
         for interval in ("-1", "nan", "inf"):
             with self.subTest(interval=interval):
