@@ -16,7 +16,13 @@ from ramcleaner.detect import Finding, detect
 from ramcleaner.history import default_history_path, load_history
 from ramcleaner.notify import NotifySend
 from ramcleaner.owner import OwnerUsage, group_by_owner
-from ramcleaner.procscan import Proc, clock_ticks, read_uptime, scan_processes
+from ramcleaner.procscan import (
+    Proc,
+    clock_ticks,
+    read_boot_id,
+    read_uptime,
+    scan_processes,
+)
 from ramcleaner.watch import (
     format_finding,
     format_stop_result,
@@ -142,6 +148,7 @@ def _scan_and_detect(
         read_uptime(args.proc_root),
         clock_ticks(),
         history,
+        boot_id=read_boot_id(args.proc_root),
     )
     return procs, findings, history
 

@@ -150,7 +150,9 @@ class ReportTest(unittest.TestCase):
              {"pid": 20, "comm": "daemon", "rss_kb": 1000}],
         )
         history = self.root / "history.json"
-        contents = json.dumps([{"time": 1000, "procs": {}, "zombies": ["10:100"]}])
+        contents = json.dumps([
+            {"time": 1000, "procs": {}, "zombies": ["10:100"], "boot_id": "boot-fixture"},
+        ])
         history.write_text(contents, encoding="utf-8")
         before = history.stat()
         stdout = io.StringIO()

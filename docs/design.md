@@ -72,7 +72,9 @@ with an id, the processes involved, their RSS and swap, and a one-line reason.
    step shrinking by more than 1 % of the previous size. Chromium and Electron child processes (a
    `--type=` argument) and Firefox content processes (`-contentproc`) are excluded. History lives in
    `$XDG_STATE_HOME/ramcleaner/history.json` (default `~/.local/state/ramcleaner/`), pruned to the
-   window.
+   window. When `/proc/sys/kernel/random/boot_id` is readable, growth and zombie persistence use
+   only history entries from that boot; entries from another boot, or recorded without a boot id,
+   are ignored.
 
 Processes in the protected list are never proposed: pid 1, the user's systemd manager, the
 session compositor and shell (`kwin_wayland`, `plasmashell`, `ksmserver`), and ramCleaner itself.

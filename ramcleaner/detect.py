@@ -54,6 +54,7 @@ def detect(
     clk_tck: int,
     history: list[dict],
     now: float | None = None,
+    boot_id: str | None = None,
 ) -> list[Finding]:
     eligible = {
         pid: proc for pid, proc in second.items()
@@ -93,7 +94,12 @@ def detect(
                 procs=ordered,
             ))
 
-    previous_zombies = set(history[-1]["zombies"]) if history else set()
+    # Entries from another boot, or recorded before boot_id existed, must not supply samples.
+    if boot_id is None:
+        usable = history
+    else:
+        usable = [entry for entry in history if entry.get("boot_id") == boot_id]
+    previous_zombies = set(usable[-1]["zombies"]) if usable else set()
     zombies: dict[int, list[int]] = {}
     for proc in eligible.values():
         parent = eligible.get(proc.ppid)
@@ -122,7 +128,7 @@ def detect(
     if now is None:
         now = time.time()
     recent = sorted(
-        (entry for entry in history if now - config.history_hours * 3600 <= entry["time"] <= now),
+        (entry for entry in usable if now - config.history_hours * 3600 <= entry["time"] <= now),
         key=lambda entry: entry["time"],
     )
     for proc in eligible.values():

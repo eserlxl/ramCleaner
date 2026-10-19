@@ -87,6 +87,7 @@ def run_watch(
         time.sleep(args_like.interval)
         procs = scan_processes(proc_root=args_like.proc_root)
         stamp = float(now())
+        boot_id = read_boot_id(args_like.proc_root)
 
         findings = detect(
             first,
@@ -96,9 +97,9 @@ def run_watch(
             clock_ticks(),
             history,
             now=stamp,
+            boot_id=boot_id,
         )
 
-        boot_id = read_boot_id(args_like.proc_root)
         entry = {
             "time": stamp,
             "procs": {

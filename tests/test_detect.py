@@ -38,11 +38,12 @@ class DetectTest(unittest.TestCase):
             mock.start()
             self.addCleanup(mock.stop)
 
-    def findings(self, *, first=None, second=None, config=None, history=None):
+    def findings(self, *, first=None, second=None, config=None, history=None, boot_id=None):
         return detect(
             self.procs if first is None else first,
             self.procs if second is None else second,
             config or Config(), 100000, 100, history or [],
+            boot_id=boot_id,
         )
 
     def growth_history(self, sizes=(100, 200, 300, 400)):
@@ -234,6 +235,55 @@ class DetectTest(unittest.TestCase):
         history = [{"time": 999900, "procs": {}, "zombies": ["30:100"]}]
         findings = self.findings(second={**self.procs, 20: parent, 30: zombie}, history=history)
         self.assertEqual([finding.rule for finding in findings], ["zombie", "idle-clones"])
+
+    def test_other_boot_history_is_ignored_when_boot_is_known(self) -> None:
+        proc = replace(self.procs[10], rss_kb=548 * 1024, swap_kb=64 * 1024)
+        parent = replace(self.procs[10], pid=20, comm="daemon", rss_kb=42)
+        grown = {10: proc}
+        zombies = {20: parent, 10: replace(self.procs[10], state="Z")}
+        growth = self.growth_history()
+        previous = [{"time": 999900, "procs": {}, "zombies": ["10:100"]}]
+
+        def tagged(entries, token):
+            return [{**entry, "boot_id": token} for entry in entries]
+
+        finding, = self.findings(
+            second=grown, history=tagged(growth, "boot-fixture"), boot_id="boot-fixture")
+        self.assertEqual(finding.rule, "growth")
+        finding, = self.findings(
+            second=zombies, history=tagged(previous, "boot-fixture"), boot_id="boot-fixture")
+        self.assertEqual(finding.rule, "zombie")
+        # The last entry from this boot supplies previous zombies, not history[-1].
+        finding, = self.findings(
+            second=zombies,
+            history=tagged(previous, "boot-fixture") + [
+                {"time": 999950, "procs": {}, "zombies": [], "boot_id": "other-boot"},
+            ],
+            boot_id="boot-fixture",
+        )
+        self.assertEqual(finding.rule, "zombie")
+
+        ignored = (
+            (tagged(growth, "other-boot"), grown),
+            (growth, grown),
+            (tagged(previous, "other-boot"), zombies),
+            (previous, zombies),
+            ([
+                {"time": 999800, "procs": {}, "zombies": [], "boot_id": "boot-fixture"},
+                {"time": 999900, "procs": {}, "zombies": ["10:100"], "boot_id": "other-boot"},
+            ], zombies),
+        )
+        for entries, second in ignored:
+            with self.subTest(entries=entries):
+                self.assertEqual(
+                    self.findings(second=second, history=entries, boot_id="boot-fixture"), [])
+
+        finding, = self.findings(
+            second=grown, history=tagged(growth, "other-boot"), boot_id=None)
+        self.assertEqual(finding.rule, "growth")
+        finding, = self.findings(
+            second=zombies, history=tagged(previous, "other-boot"), boot_id=None)
+        self.assertEqual(finding.rule, "zombie")
 
 
 if __name__ == "__main__":
