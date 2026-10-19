@@ -31,4 +31,4 @@ test:
 	python3 -B -m unittest discover -s tests
 
 lint:
-	ruff check ramcleaner tests bin/ramcleaner
+	ruff check --target-version py311 ramcleaner tests bin/ramcleaner

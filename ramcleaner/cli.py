@@ -166,7 +166,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("Suppressed findings: none")
             return 0
         for key, until in active.items():
-            print(f"{key}  until {datetime.fromtimestamp(until).isoformat(timespec="seconds")}")
+            until_iso = datetime.fromtimestamp(until).isoformat(timespec="seconds")
+            print(f"{key}  until {until_iso}")
         return 0
 
     if args.command in ("report", "clean", "watch"):
