@@ -169,7 +169,7 @@ class WatchTest(unittest.TestCase):
 
     def test_suppression_window_and_expiry_pruning(self) -> None:
         config = Config(ignore_for_hours=2)
-        for outcome in ("ignore", "", "unavailable"):
+        for outcome in ("ignore", ""):
             with self.subTest(outcome=outcome):
                 self.ignored_file.unlink(missing_ok=True)
                 self.history_file.unlink(missing_ok=True)
@@ -292,6 +292,24 @@ class WatchTest(unittest.TestCase):
         self.assertEqual(load_ignored(self.ignored_file), {})
         self.assertIn("no answer, will ask again", stdout1.getvalue())
         self.assertIn("no answer, will ask again", stdout2.getvalue())
+
+    def test_unavailable_outcome_neither_stops_nor_suppresses(self) -> None:
+        notifier = _FakeNotifier("unavailable")
+        stopper = _FakeStopper()
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            rc = run_watch(
+                self._args(),
+                Config(),
+                notifier=notifier,
+                stopper=stopper,
+                now=lambda: 1000.0,
+            )
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(notifier.asked), 1)
+        self.assertEqual(stopper.calls, [])
+        self.assertEqual(load_ignored(self.ignored_file), {})
+        self.assertIn("notification unavailable, will ask again", stdout.getvalue())
 
     def test_held_lock_returns_0_without_scanning(self) -> None:
         self.state_dir.mkdir(parents=True, exist_ok=True)

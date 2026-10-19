@@ -143,6 +143,8 @@ def run_watch(
                     exit_code = 1
             elif answer == "timeout":
                 print(f"{finding.owner_label}: no answer, will ask again")
+            elif answer == "unavailable":
+                print(f"{finding.owner_label}: notification unavailable, will ask again")
             else:
                 ignored[finding.key] = stamp + config.ignore_for_hours * 3600
                 suppressed_any = True
