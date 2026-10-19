@@ -60,6 +60,8 @@ or:
 python3 -m ramcleaner report
 ```
 
+A hands-on trial of `report`, `clean`, and the notification **Stop** and **Ignore** actions, using a throwaway history file so the default state directory stays untouched, is in [trial.md](trial.md).
+
 ## Enable and disable the systemd user timer
 
 After installing with the default `USERUNITDIR`, systemd finds the units:

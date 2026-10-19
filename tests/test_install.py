@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 
 import ramcleaner
+import ramcleaner.cli
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -143,6 +144,20 @@ class InstallTest(unittest.TestCase):
             )
             self.assertNotEqual(res.returncode, 0)
             self.assertIn("LIBDIR", res.stderr)
+
+
+class TrialGuideTest(unittest.TestCase):
+    def test_documented_commands_parse(self) -> None:
+        text = (REPO_ROOT / "docs" / "trial.md").read_text(encoding="utf-8")
+        parser = ramcleaner.cli._build_parser()
+        commands = [
+            line.removeprefix("./bin/ramcleaner ")
+            for line in text.splitlines()
+            if line.startswith("./bin/ramcleaner ")
+        ]
+        self.assertGreater(len(commands), 0)
+        for command in commands:
+            parser.parse_args(command.split())
 
 
 class PackageVersionTest(unittest.TestCase):

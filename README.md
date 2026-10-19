@@ -62,6 +62,7 @@ systemctl --user enable --now ramcleaner-watch.timer
 | Document | Description |
 | --- | --- |
 | [docs/installation.md](docs/installation.md) | Requirements, `make` variables and targets, systemd user timer setup, and uninstall. |
+| [docs/trial.md](docs/trial.md) | Desktop trial of report, clean, and notification Stop/Ignore from a checkout, without the default state directory. |
 | [docs/configuration.md](docs/configuration.md) | `config.toml` path, all configuration keys, types, defaults, and `stop_rules` examples. |
 | [docs/cli-reference.md](docs/cli-reference.md) | Subcommands, options, state files (`history.json`, `ignored.json`, `watch.lock`), and exit statuses. |
 
