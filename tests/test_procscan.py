@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from ramcleaner.procscan import (
     clock_ticks,
+    read_boot_id,
     read_cgroup_memory,
     read_uptime,
     scan_processes,
@@ -101,6 +102,30 @@ class ProcscanTest(unittest.TestCase):
                 with self.subTest(contents=contents):
                     (cg_dir / "memory.stat").write_text(contents, encoding="utf-8")
                     self.assertIsNone(read_cgroup_memory(cgroup_root, cg_path))
+
+    def test_read_boot_id_custom_token(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            proc_a, _ = build_tree(f"{tmp}/a", [], boot_id="boot-a")
+            proc_b, _ = build_tree(f"{tmp}/b", [], boot_id="boot-b")
+            self.assertEqual(read_boot_id(proc_a), "boot-a")
+            self.assertEqual(read_boot_id(proc_b), "boot-b")
+
+    def test_read_boot_id_default_fixture(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            proc_root, _ = build_tree(tmp, [])
+            self.assertEqual(read_boot_id(proc_root), "boot-fixture")
+
+    def test_read_boot_id_absent_or_unreadable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            proc_root, _ = build_tree(tmp, [], boot_id=None)
+            self.assertIsNone(read_boot_id(proc_root))
+            boot = proc_root / "sys/kernel/random/boot_id"
+            boot.parent.mkdir(parents=True, exist_ok=True)
+            boot.write_text(" \n", encoding="utf-8")
+            self.assertIsNone(read_boot_id(proc_root))
+            boot.unlink()
+            boot.mkdir()
+            self.assertIsNone(read_boot_id(proc_root))
 
     def test_uptime_and_clock_ticks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

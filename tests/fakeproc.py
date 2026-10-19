@@ -70,6 +70,7 @@ def build_tree(
     procs: Iterable[Mapping[str, Any]],
     cgroups: Mapping[str, tuple[int, int] | tuple[int, int, int]] | None = None,
     uptime: float = 100000.0,
+    boot_id: str | None = "boot-fixture",
 ) -> tuple[Path, Path]:
     base = Path(root)
     proc_root = base / "proc"
@@ -77,6 +78,10 @@ def build_tree(
     proc_root.mkdir(parents=True, exist_ok=True)
     cgroup_root.mkdir(parents=True, exist_ok=True)
     (proc_root / "uptime").write_text(f"{uptime} 0.0\n", encoding="utf-8")
+    if boot_id is not None:
+        boot_path = proc_root / "sys/kernel/random/boot_id"
+        boot_path.parent.mkdir(parents=True, exist_ok=True)
+        boot_path.write_text(f"{boot_id}\n", encoding="utf-8")
 
     for spec in procs:
         write_proc(proc_root, spec)

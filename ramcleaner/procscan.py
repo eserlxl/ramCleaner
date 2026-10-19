@@ -140,6 +140,17 @@ def read_cgroup_memory(
     return anon, swap, zswap
 
 
+def read_boot_id(proc_root: str | Path = "/proc") -> str | None:
+    path = Path(proc_root) / "sys/kernel/random/boot_id"
+    try:
+        token = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not token:
+        return None
+    return token
+
+
 def read_uptime(proc_root: str | Path) -> float:
     return float((Path(proc_root) / "uptime").read_text(encoding="utf-8").split()[0])
 
