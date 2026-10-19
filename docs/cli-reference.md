@@ -4,6 +4,7 @@
 
 ```text
 usage: ramcleaner [-h] [--proc-root PROC_ROOT] [--cgroup-root CGROUP_ROOT]
+                  [--version]
                   {report,clean,watch,ignored} ...
 
 Report memory usage attributed to owning applications and units.
@@ -24,7 +25,10 @@ options:
   --cgroup-root CGROUP_ROOT
                         Path to cgroup v2 root (test aid; default:
                         /sys/fs/cgroup).
+  --version             show program's version number and exit
 ```
+
+`ramcleaner --version` prints `ramcleaner <version>` and exits `0` without scanning.
 
 `--proc-root` and `--cgroup-root` are also accepted after `report`, `clean` and `watch` for test fixtures.
 

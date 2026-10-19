@@ -13,6 +13,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
+import ramcleaner
 from ramcleaner.cli import main
 from ramcleaner.procscan import scan_processes
 from tests.fakeproc import build_tree
@@ -190,6 +191,18 @@ class ReportTest(unittest.TestCase):
         with redirect_stdout(io.StringIO()), patch("ramcleaner.cli.time.sleep") as sleep:
             main(["report", "--proc-root", str(proc_root), "--cgroup-root", str(cgroup_root)])
         sleep.assert_called_once_with(2.0)
+
+    def test_version_prints_package_version_without_scanning(self) -> None:
+        stdout = io.StringIO()
+        with (
+            patch("ramcleaner.cli.scan_processes") as scan,
+            redirect_stdout(stdout),
+            self.assertRaises(SystemExit) as error,
+        ):
+            main(["--version"])
+        self.assertEqual(error.exception.code, 0)
+        self.assertEqual(stdout.getvalue(), f"ramcleaner {ramcleaner.__version__}\n")
+        scan.assert_not_called()
 
     def test_history_file_help_states_what_each_subcommand_does_with_it(self) -> None:
         docs = " ".join((Path(__file__).resolve().parents[1] / "docs" / "cli-reference.md")

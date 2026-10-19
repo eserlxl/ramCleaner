@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 
+from ramcleaner import __version__
 from ramcleaner.actions import stop_finding
 from ramcleaner.config import Config, ConfigError, load_config
 from ramcleaner.detect import Finding, detect, same_boot_history
@@ -74,6 +75,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default="/sys/fs/cgroup",
         help="Path to cgroup v2 root (test aid; default: /sys/fs/cgroup).",
     )
+    parser.add_argument("--version", action="version", version=f"ramcleaner {__version__}")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
     report_p = subparsers.add_parser(
