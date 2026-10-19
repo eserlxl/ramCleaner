@@ -21,6 +21,7 @@ _INT_KEYS = frozenset(
         "min_growth_mb",
         "term_timeout",
         "ignore_for_hours",
+        "ask_timeout_minutes",
     }
 )
 _ALL_KEYS = _INT_KEYS | {"protected", "stop_rules"}
@@ -35,6 +36,7 @@ class Config:
     min_growth_mb: int = 512
     term_timeout: int = 10
     ignore_for_hours: int = 24
+    ask_timeout_minutes: int = 10
     protected: tuple[str, ...] = ()
     stop_rules: tuple[tuple[str, str], ...] = ()
 
@@ -92,6 +94,8 @@ def load_config(path: str | Path | None = None) -> Config:
         if key in _INT_KEYS:
             if not isinstance(val, int) or isinstance(val, bool):
                 raise ConfigError(f"Expected integer for key '{key}'")
+            if key == "ask_timeout_minutes" and val < 1:
+                raise ConfigError("Expected integer >= 1 for key 'ask_timeout_minutes'")
             kwargs[key] = val
         elif key == "protected":
             if not isinstance(val, list) or not all(isinstance(x, str) for x in val):

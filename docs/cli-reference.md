@@ -89,8 +89,8 @@ Runs a single scan pass intended for `ramcleaner-watch.service`:
 1. Opens `watch.lock` in the parent directory of `--history-file` and takes a non-blocking exclusive lock (`fcntl.flock` with `LOCK_EX | LOCK_NB`). If another `watch` process holds the lock, prints `another watch is running` to `stderr` and exits `0`.
 2. Loads `history.json`, takes two process samples `--interval` seconds apart, runs detection, and atomically appends the current scan to `history.json` (pruning entries older than `history_hours`).
 3. Loads `ignored.json` from the same state directory and filters out findings whose suppression timestamp is in the future (`until > now`).
-4. Prints each unsuppressed finding to `stdout` and starts `notify-send --app-name=ramCleaner --urgency=normal --action=stop=Stop --action=ignore=Ignore` concurrently for all unsuppressed findings, waiting for the user's responses.
-5. For each finding where the user clicked `Stop`, stops the finding (without `--force`) and sends a follow-up informational notification summarizing the result. For every other answer (`Ignore`, notification closed, or `notify-send` unavailable), records `now + ignore_for_hours * 3600` in `ignored.json`.
+4. Prints each unsuppressed finding to `stdout` and starts `notify-send --app-name=ramCleaner --urgency=normal --expire-time=<(ask_timeout_minutes * 60 + 60) * 1000> --action=stop=Stop --action=ignore=Ignore` concurrently for all unsuppressed findings, waiting against a shared `ask_timeout_minutes` deadline (default `10` minutes). Any `notify-send` process still running at the deadline is killed and reaped with outcome `"timeout"`.
+5. For each finding where the user clicked `Stop`, stops the finding (without `--force`) and sends a follow-up informational notification summarizing the result. For each timed-out finding (`"timeout"`), prints `<owner_label>: no answer, will ask again` to `stdout` without stopping or suppressing it. For every other answer (`Ignore`, notification closed, or `notify-send` unavailable), records `now + ignore_for_hours * 3600` in `ignored.json`.
 
 ## State files
 

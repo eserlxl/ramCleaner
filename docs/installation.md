@@ -65,7 +65,7 @@ systemctl --user daemon-reload
 systemctl --user enable --now ramcleaner-watch.timer
 ```
 
-`ramcleaner-watch.timer` runs `ramcleaner-watch.service` 10 minutes after boot (`OnBootSec=10min`) and then every 15 minutes (`OnUnitActiveSec=15min`); while a run still waits for a notification answer, the timer starts no second run. `ramcleaner-watch.service` uses `Type=oneshot` and `TimeoutStartSec=infinity` because `ramcleaner watch` waits for the user to click a notification action before exiting.
+`ramcleaner-watch.timer` runs `ramcleaner-watch.service` 10 minutes after boot (`OnBootSec=10min`) and then every 15 minutes (`OnUnitActiveSec=15min`); while a run still waits for a notification answer, the timer starts no second run. `ramcleaner-watch.service` uses `Type=oneshot` and `TimeoutStartSec=infinity` while `ramcleaner watch` bounds its notification wait to `ask_timeout_minutes` (default `10` minutes). Keep `ask_timeout_minutes` below the 15-minute timer interval so unanswered notifications finish before the next scheduled scan and history recording continues on every tick.
 
 Check the timer schedule and last service run:
 

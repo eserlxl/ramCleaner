@@ -93,10 +93,12 @@ Stopping is per finding and only after approval.
   approved ones. Refuses with exit 2 if stdin is not a tty; exits 0 when nothing is approved or
   every approved stop leaves no survivors, and 1 if any survivor remains.
 - `ramcleaner watch` — one scan for the systemd user timer (`ramcleaner-watch.timer` and
-  `ramcleaner-watch.service`, `Type=oneshot` with `TimeoutStartSec=infinity` while waiting for the
-  notification answer); guarded by `watch.lock`, records history, and turns each new finding into a
-  desktop notification with "Stop" and "Ignore" actions (`notify-send --action`). Non-"Stop"
-  outcomes suppress that finding's key in `ignored.json` for `ignore_for_hours` (default 24 h).
+  `ramcleaner-watch.service`, `Type=oneshot` with `TimeoutStartSec=infinity`); guarded by
+  `watch.lock`, records history, and turns each new finding into a desktop notification with "Stop"
+  and "Ignore" actions (`notify-send --expire-time --action`), waiting against a shared
+  `ask_timeout_minutes` deadline (default 10 min). Timed-out notifications are killed and neither
+  stop nor suppress the finding (it is asked again on the next run); every other non-"Stop" outcome
+  suppresses that finding's key in `ignored.json` for `ignore_for_hours` (default 24 h).
 
 `bin/ramcleaner` locates the package in `../lib/ramcleaner` when installed via `Makefile` or in the
 repository root when run from a checkout.

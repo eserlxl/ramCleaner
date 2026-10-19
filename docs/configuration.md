@@ -16,7 +16,8 @@ The file is optional and parsed as UTF-8 TOML with Python's `tomllib`. Every key
 | `history_hours` | integer | `24` | Retention and lookback window in hours for `history.json` entries and `growth` detection. |
 | `min_growth_mb` | integer | `512` | Minimum `VmRSS + VmSwap` increase in MiB across at least 5 samples (at least 4 recorded history scans within `history_hours` plus the current scan, with no step shrinking by more than 1%) required for a `growth` finding. |
 | `term_timeout` | integer | `10` | Seconds to wait (polling `/proc/PID` every 0.2 s) after sending `SIGTERM` or running a stop rule before reporting surviving processes or sending `SIGKILL` under `--force`. |
-| `ignore_for_hours` | integer | `24` | Hours to suppress a finding key in `ignored.json` when the notification is ignored, dismissed without clicking "Stop", or `notify-send` is unavailable in `ramcleaner watch`. |
+| `ignore_for_hours` | integer | `24` | Hours to suppress a finding key in `ignored.json` when the notification is ignored, dismissed without clicking "Stop", or `notify-send` is unavailable in `ramcleaner watch`. An unanswered notification that reaches `ask_timeout_minutes` is not suppressed and will be asked again on the next run. |
+| `ask_timeout_minutes` | integer (`>= 1`) | `10` | Maximum minutes `ramcleaner watch` waits for all `notify-send` action notifications in a single pass (the popup's `--expire-time` is one minute longer, so `ramcleaner` ends the wait before the notification server closes it). Values `< 1` are rejected with a configuration error. |
 | `protected` | array of strings | `[]` | Additional process `comm` names (from `/proc/PID/stat`) that are never reported or stopped. Extends the built-in protected set: PID `1`, the current `ramcleaner` process and its parent, and `comm` in `systemd`, `kwin_wayland`, `plasmashell`, and `ksmserver`. |
 | `stop_rules` | array of `[pattern, command]` pairs, array of `{pattern, command}` tables, or table | `[]` | Ordered list of `(pattern, command)` pairs checked before sending `SIGTERM`. If `re.search(pattern, " ".join(cmdline))` matches any verified target process in the finding, `command` is split with `shlex.split` and run without a shell (60 s timeout) instead of signaling the PIDs directly. |
 
@@ -55,6 +56,7 @@ history_hours = 24
 min_growth_mb = 512
 term_timeout = 10
 ignore_for_hours = 24
+ask_timeout_minutes = 10
 protected = []
 
 stop_rules = [

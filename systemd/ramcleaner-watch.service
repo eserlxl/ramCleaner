@@ -5,5 +5,5 @@ Description=Find processes holding unused memory and ask before stopping them
 [Service]
 Type=oneshot
 ExecStart=@BINDIR@/ramcleaner watch
-# A run waits for the user's notification answer before finishing.
+# A run waits at most ask_timeout_minutes for notification answers.
 TimeoutStartSec=infinity

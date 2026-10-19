@@ -6,6 +6,7 @@ import fcntl
 import io
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -26,10 +27,12 @@ class _FakeNotifier:
     def __init__(self, answers: dict[str, str] | str = "ignore") -> None:
         self.answers = answers
         self.asked: list[list[Finding]] = []
+        self.timeouts: list[int] = []
         self.informed: list[tuple[str, str]] = []
 
-    def ask(self, findings: list[Finding]) -> dict[str, str]:
+    def ask(self, findings: list[Finding], timeout_s: int = 600) -> dict[str, str]:
         self.asked.append(list(findings))
+        self.timeouts.append(timeout_s)
         if isinstance(self.answers, str):
             return {finding.key: self.answers for finding in findings}
         return {
@@ -68,14 +71,29 @@ class _FakePopen:
         argv: list[str],
         stdout_text: str = "",
         returncode: int = 0,
+        *,
+        expire_on_first_communicate: bool = False,
     ) -> None:
         self.argv = argv
         self._stdout_text = stdout_text
         self.returncode = returncode
+        self._expire_on_first = expire_on_first_communicate
         self.communicated = False
+        self.communicate_timeouts: list[float | None] = []
+        self.killed = False
+        self.reaped = False
 
-    def communicate(self) -> tuple[str, str]:
+    def kill(self) -> None:
+        self.killed = True
+
+    def communicate(self, timeout: float | None = None) -> tuple[str, str]:
         self.communicated = True
+        self.communicate_timeouts.append(timeout)
+        if self._expire_on_first:
+            self._expire_on_first = False
+            raise subprocess.TimeoutExpired(self.argv, timeout or 0.0)
+        if self.killed:
+            self.reaped = True
         return self._stdout_text, ""
 
 
@@ -238,6 +256,42 @@ class WatchTest(unittest.TestCase):
                 self.assertIn("stopped=10, 11, 12, 13", body)
                 self.assertFalse(self.ignored_file.exists())
 
+    def test_timeout_outcome_neither_stops_nor_suppresses_and_passes_configured_timeout(
+        self,
+    ) -> None:
+        config = Config(ask_timeout_minutes=7)
+        notifier = _FakeNotifier("timeout")
+        stopper = _FakeStopper()
+
+        stdout1 = io.StringIO()
+        stdout2 = io.StringIO()
+        with redirect_stdout(stdout1):
+            rc1 = run_watch(
+                self._args(),
+                config,
+                notifier=notifier,
+                stopper=stopper,
+                now=lambda: 1000.0,
+            )
+        with redirect_stdout(stdout2):
+            rc2 = run_watch(
+                self._args(),
+                config,
+                notifier=notifier,
+                stopper=stopper,
+                now=lambda: 1900.0,
+            )
+
+        self.assertEqual((rc1, rc2), (0, 0))
+        self.assertEqual(notifier.timeouts, [420, 420])
+        self.assertEqual(len(notifier.asked), 2)
+        self.assertEqual(stopper.calls, [])
+        self.assertEqual(notifier.informed, [])
+        self.assertFalse(self.ignored_file.exists())
+        self.assertEqual(load_ignored(self.ignored_file), {})
+        self.assertIn("no answer, will ask again", stdout1.getvalue())
+        self.assertIn("no answer, will ask again", stdout2.getvalue())
+
     def test_held_lock_returns_0_without_scanning(self) -> None:
         self.state_dir.mkdir(parents=True, exist_ok=True)
         lock_path = self.state_dir / "watch.lock"
@@ -307,24 +361,67 @@ class NotifySendTest(unittest.TestCase):
             return proc
 
         with patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen):
-            answers = NotifySend().ask([f1, f2, f3])
+            answers = NotifySend().ask([f1, f2, f3], 300)
 
         self.assertEqual(answers, {"k1": "stop", "k2": "ignore", "k3": ""})
         self.assertEqual(len(created), 3)
         argv = created[0].argv
         self.assertEqual(
-            argv[:5],
+            argv[:6],
             [
                 "notify-send",
                 "--app-name=ramCleaner",
                 "--urgency=normal",
+                "--expire-time=360000",
                 "--action=stop=Stop",
                 "--action=ignore=Ignore",
             ],
         )
-        self.assertEqual(argv[5], "org.kde.yakuake: 768 MB in 2 processes")
-        self.assertIn("2 idle copies of bun start.mjs older than 6 h", argv[6])
-        self.assertIn("10, 11", argv[6])
+        self.assertEqual(argv[6], "org.kde.yakuake: 768 MB in 2 processes")
+        self.assertIn("2 idle copies of bun start.mjs older than 6 h", argv[7])
+        self.assertIn("10, 11", argv[7])
+
+    def test_ask_uses_shared_deadline_and_kills_timed_out_process(self) -> None:
+        f1 = self._finding("k1", (10, 11))
+        f2 = self._finding("k2", (12, 13))
+        f3 = self._finding("k3", (14, 15))
+        specs = iter(
+            [
+                ("stop\n", False),
+                ("", True),
+                ("stop\n", False),
+            ]
+        )
+        created: list[_FakePopen] = []
+
+        def fake_popen(argv, *, stdout=None, text=None):
+            stdout_text, expire = next(specs)
+            proc = _FakePopen(
+                argv,
+                stdout_text=stdout_text,
+                returncode=0,
+                expire_on_first_communicate=expire,
+            )
+            created.append(proc)
+            return proc
+
+        # Start at 100.0 -> deadline = 700.0; p1 checked at 120.0 (580s left),
+        # p2 checked at 350.0 (350s left, times out), p3 checked at 705.0 (0s left).
+        ticks = iter([100.0, 120.0, 350.0, 705.0])
+        with (
+            patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen),
+            patch("ramcleaner.notify.time.monotonic", side_effect=lambda: next(ticks)),
+        ):
+            answers = NotifySend().ask([f1, f2, f3], 600)
+
+        self.assertEqual(answers, {"k1": "stop", "k2": "timeout", "k3": "stop"})
+        self.assertEqual(created[0].communicate_timeouts, [580.0])
+        self.assertFalse(created[0].killed)
+        self.assertEqual(created[1].communicate_timeouts, [350.0, None])
+        self.assertTrue(created[1].killed)
+        self.assertTrue(created[1].reaped)
+        self.assertEqual(created[2].communicate_timeouts, [0.0])
+        self.assertFalse(created[2].killed)
 
     def test_missing_or_failing_notify_send_returns_unavailable_with_one_warning(self) -> None:
         findings = [self._finding("k1"), self._finding("k2")]
@@ -334,7 +431,7 @@ class NotifySendTest(unittest.TestCase):
             patch("ramcleaner.notify.subprocess.Popen", side_effect=FileNotFoundError("no notify-send")),
             redirect_stderr(stderr),
         ):
-            answers = NotifySend().ask(findings)
+            answers = NotifySend().ask(findings, 600)
         self.assertEqual(answers, {"k1": "unavailable", "k2": "unavailable"})
         self.assertEqual(len(stderr.getvalue().splitlines()), 1)
 
@@ -346,7 +443,7 @@ class NotifySendTest(unittest.TestCase):
             ),
             redirect_stderr(stderr),
         ):
-            answers = NotifySend().ask(findings)
+            answers = NotifySend().ask(findings, 600)
         self.assertEqual(answers, {"k1": "unavailable", "k2": "unavailable"})
         self.assertEqual(len(stderr.getvalue().splitlines()), 1)
 

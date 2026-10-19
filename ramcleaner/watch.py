@@ -127,7 +127,7 @@ def run_watch(
         for finding in unsuppressed:
             print(format_finding(finding))
 
-        answers = notifier.ask(unsuppressed)
+        answers = notifier.ask(unsuppressed, config.ask_timeout_minutes * 60)
         exit_code = 0
         suppressed_any = False
 
@@ -141,6 +141,8 @@ def run_watch(
                 notifier.inform(summary, format_stop_result(result))
                 if result.still_alive:
                     exit_code = 1
+            elif answer == "timeout":
+                print(f"{finding.owner_label}: no answer, will ask again")
             else:
                 ignored[finding.key] = stamp + config.ignore_for_hours * 3600
                 suppressed_any = True

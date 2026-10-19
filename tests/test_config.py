@@ -20,6 +20,7 @@ class ConfigTest(unittest.TestCase):
             self.assertEqual(cfg.min_growth_mb, 512)
             self.assertEqual(cfg.term_timeout, 10)
             self.assertEqual(cfg.ignore_for_hours, 24)
+            self.assertEqual(cfg.ask_timeout_minutes, 10)
             self.assertEqual(cfg.protected, ())
             self.assertEqual(cfg.stop_rules, ())
 
@@ -28,12 +29,14 @@ class ConfigTest(unittest.TestCase):
             cfg_path = Path(tmp) / "config.toml"
             cfg_path.write_text(
                 'min_clones = 6\n'
+                'ask_timeout_minutes = 5\n'
                 'protected = ["my-daemon"]\n'
                 'stop_rules = [["codex app-server", "codex app-server daemon stop"]]\n',
                 encoding="utf-8",
             )
             cfg = load_config(cfg_path)
             self.assertEqual(cfg.min_clones, 6)
+            self.assertEqual(cfg.ask_timeout_minutes, 5)
             self.assertEqual(cfg.protected, ("my-daemon",))
             self.assertEqual(
                 cfg.stop_rules,
@@ -55,6 +58,18 @@ class ConfigTest(unittest.TestCase):
             with self.assertRaises(ConfigError) as ctx:
                 load_config(cfg_path)
             self.assertIn("min_clones", str(ctx.exception))
+
+    def test_invalid_ask_timeout_minutes_raises_config_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_path = Path(tmp) / "config.toml"
+            for raw in ("0", "-1", '"ten"'):
+                with self.subTest(raw=raw):
+                    cfg_path.write_text(
+                        f"ask_timeout_minutes = {raw}\n", encoding="utf-8"
+                    )
+                    with self.assertRaises(ConfigError) as ctx:
+                        load_config(cfg_path)
+                    self.assertIn("ask_timeout_minutes", str(ctx.exception))
 
 
 if __name__ == "__main__":
