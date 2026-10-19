@@ -188,6 +188,17 @@ class PackageVersionTest(unittest.TestCase):
             newest = max(headings, key=version_key)
             self.assertLessEqual(version_key(newest), version_key(ramcleaner.__version__))
 
+    def test_pkgbuild_source_is_a_signed_tag(self) -> None:
+        text = (REPO_ROOT / "PKGBUILD").read_text(encoding="utf-8")
+        source = re.search(r'^source=\("([^"]+)"\)$', text, re.MULTILINE)
+        self.assertIsNotNone(source)
+        self.assertTrue(source.group(1).endswith("#tag=v$pkgver?signed"))
+        keys = re.search(r"^validpgpkeys=\(([^)]*)\)$", text, re.MULTILINE)
+        self.assertIsNotNone(keys)
+        fingerprints = re.findall(r"'([^']*)'", keys.group(1))
+        self.assertEqual(len(fingerprints), 1)
+        self.assertRegex(fingerprints[0], r"^[0-9A-Fa-f]{40}$")
+
 
 if __name__ == "__main__":
     unittest.main()
