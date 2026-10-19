@@ -14,18 +14,17 @@ class ConfigError(ValueError):
     """Raised when the configuration file has an unknown key or wrong value type."""
 
 
-_INT_KEYS = frozenset(
-    {
-        "min_clones",
-        "min_age_hours",
-        "min_group_mb",
-        "history_hours",
-        "min_growth_mb",
-        "term_timeout",
-        "ignore_for_hours",
-        "ask_timeout_minutes",
-    }
-)
+_INT_MINIMUMS: dict[str, int] = {
+    "min_clones": 2,
+    "min_age_hours": 0,
+    "min_group_mb": 0,
+    "history_hours": 1,
+    "min_growth_mb": 0,
+    "term_timeout": 0,
+    "ignore_for_hours": 0,
+    "ask_timeout_minutes": 1,
+}
+_INT_KEYS = frozenset(_INT_MINIMUMS)
 _ALL_KEYS = _INT_KEYS | {"protected", "stop_rules"}
 
 
@@ -114,8 +113,9 @@ def load_config(path: str | Path | None = None) -> Config:
         if key in _INT_KEYS:
             if not isinstance(val, int) or isinstance(val, bool):
                 raise ConfigError(f"Expected integer for key '{key}'")
-            if key == "ask_timeout_minutes" and val < 1:
-                raise ConfigError("Expected integer >= 1 for key 'ask_timeout_minutes'")
+            min_val = _INT_MINIMUMS[key]
+            if val < min_val:
+                raise ConfigError(f"Expected integer >= {min_val} for key '{key}'")
             kwargs[key] = val
         elif key == "protected":
             if not isinstance(val, list) or not all(isinstance(x, str) for x in val):

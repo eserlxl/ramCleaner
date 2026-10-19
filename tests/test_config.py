@@ -59,17 +59,46 @@ class ConfigTest(unittest.TestCase):
                 load_config(cfg_path)
             self.assertIn("min_clones", str(ctx.exception))
 
-    def test_invalid_ask_timeout_minutes_raises_config_error(self) -> None:
+    def test_integer_keys_below_minimum_raise_config_error(self) -> None:
+        cases = (
+            ("min_clones", 2),
+            ("min_age_hours", 0),
+            ("min_group_mb", 0),
+            ("history_hours", 1),
+            ("min_growth_mb", 0),
+            ("term_timeout", 0),
+            ("ignore_for_hours", 0),
+            ("ask_timeout_minutes", 1),
+        )
         with tempfile.TemporaryDirectory() as tmp:
             cfg_path = Path(tmp) / "config.toml"
-            for raw in ("0", "-1", '"ten"'):
-                with self.subTest(raw=raw):
+            for key, min_val in cases:
+                with self.subTest(key=key, case="below_minimum"):
                     cfg_path.write_text(
-                        f"ask_timeout_minutes = {raw}\n", encoding="utf-8"
+                        f"{key} = {min_val - 1}\n", encoding="utf-8"
                     )
                     with self.assertRaises(ConfigError) as ctx:
                         load_config(cfg_path)
-                    self.assertIn("ask_timeout_minutes", str(ctx.exception))
+                    self.assertIn(key, str(ctx.exception))
+                    self.assertIn(
+                        f"Expected integer >= {min_val} for key '{key}'",
+                        str(ctx.exception),
+                    )
+
+                with self.subTest(key=key, case="at_minimum"):
+                    cfg_path.write_text(
+                        f"{key} = {min_val}\n", encoding="utf-8"
+                    )
+                    cfg = load_config(cfg_path)
+                    self.assertEqual(getattr(cfg, key), min_val)
+
+            with self.subTest(key="ask_timeout_minutes", case="wrong_type"):
+                cfg_path.write_text(
+                    'ask_timeout_minutes = "ten"\n', encoding="utf-8"
+                )
+                with self.assertRaises(ConfigError) as ctx:
+                    load_config(cfg_path)
+                self.assertIn("ask_timeout_minutes", str(ctx.exception))
 
     def test_valid_stop_rules_shapes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
