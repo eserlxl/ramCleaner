@@ -20,6 +20,7 @@ from ramcleaner.config import Config
 from ramcleaner.detect import Finding
 from ramcleaner.history import load_history
 from ramcleaner.notify import NotifySend
+from ramcleaner.procscan import read_boot_id
 from ramcleaner.watch import load_ignored, run_watch
 from tests.fakeproc import build_tree
 
@@ -166,6 +167,40 @@ class WatchTest(unittest.TestCase):
         self.assertEqual([entry["time"] for entry in history], [1000.0, 1900.0])
         self.assertEqual(history[0]["procs"]["10:100"], 320 * 1024)
         self.assertEqual(history[0]["zombies"], ["30:200"])
+
+    def test_boot_id_recorded_when_readable(self) -> None:
+        notifier = _FakeNotifier("ignore")
+        with (
+            patch("ramcleaner.watch.read_boot_id", wraps=read_boot_id) as mocked,
+            redirect_stdout(io.StringIO()),
+        ):
+            rc = run_watch(self._args(), Config(), notifier=notifier, now=lambda: 1000.0)
+        self.assertEqual(rc, 0)
+        mocked.assert_called_once_with(self.proc_root)
+        history = load_history(self.history_file)
+        self.assertEqual(history[0]["boot_id"], "boot-fixture")
+
+    def test_boot_id_omitted_when_unavailable(self) -> None:
+        boot = self.proc_root / "sys/kernel/random/boot_id"
+        for case in ("missing", "unreadable"):
+            with self.subTest(case=case):
+                self.history_file.unlink(missing_ok=True)
+                if boot.is_dir():
+                    boot.rmdir()
+                elif boot.exists():
+                    boot.unlink()
+                if case == "unreadable":
+                    boot.parent.mkdir(parents=True, exist_ok=True)
+                    boot.mkdir()
+                notifier = _FakeNotifier("ignore")
+                with redirect_stdout(io.StringIO()):
+                    rc = run_watch(
+                        self._args(), Config(), notifier=notifier, now=lambda: 1000.0
+                    )
+                self.assertEqual(rc, 0)
+                history = load_history(self.history_file)
+                self.assertEqual(len(history), 1)
+                self.assertNotIn("boot_id", history[0])
 
     def test_suppression_window_and_expiry_pruning(self) -> None:
         config = Config(ignore_for_hours=2)

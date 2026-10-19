@@ -22,6 +22,7 @@ def _valid_entry(entry: object) -> bool:
     stamp = entry.get("time")
     procs = entry.get("procs")
     zombies = entry.get("zombies")
+    boot_id = entry.get("boot_id")
     return (
         type(stamp) in (int, float)
         and math.isfinite(stamp)
@@ -38,6 +39,7 @@ def _valid_entry(entry: object) -> bool:
             isinstance(key, str) and re.fullmatch(r"[0-9]+:[0-9]+", key) is not None
             for key in zombies
         )
+        and (boot_id is None or (isinstance(boot_id, str) and boot_id != ""))
     )
 
 

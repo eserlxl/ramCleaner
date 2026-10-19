@@ -14,7 +14,7 @@ from ramcleaner.actions import StopResult, stop_finding
 from ramcleaner.config import Config
 from ramcleaner.detect import Finding, detect
 from ramcleaner.history import append_scan, load_history, write_json_atomic
-from ramcleaner.procscan import clock_ticks, read_uptime, scan_processes
+from ramcleaner.procscan import clock_ticks, read_boot_id, read_uptime, scan_processes
 
 
 def format_finding(finding: Finding) -> str:
@@ -98,6 +98,7 @@ def run_watch(
             now=stamp,
         )
 
+        boot_id = read_boot_id(args_like.proc_root)
         entry = {
             "time": stamp,
             "procs": {
@@ -110,6 +111,8 @@ def run_watch(
                 if proc.state == "Z"
             ),
         }
+        if boot_id is not None:
+            entry["boot_id"] = boot_id
         append_scan(history_path, entry, keep_hours=config.history_hours, now=stamp)
 
         ignored_path = state_dir / "ignored.json"

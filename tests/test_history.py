@@ -87,6 +87,46 @@ class HistoryTest(unittest.TestCase):
                 self.assertEqual(load_history(path), [])
             self.assertEqual(len(stderr.getvalue().splitlines()), 1)
 
+    def test_boot_id_nonempty_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "history.json"
+            entry = {"time": 1000, "procs": {}, "zombies": [], "boot_id": "boot-a"}
+            path.write_text(json.dumps([entry]), encoding="utf-8")
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                self.assertEqual(load_history(path), [entry])
+            self.assertEqual(stderr.getvalue(), "")
+
+    def test_boot_id_omitted_or_null_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "history.json"
+            omitted = {"time": 1000, "procs": {}, "zombies": []}
+            null = {"time": 2000, "procs": {}, "zombies": [], "boot_id": None}
+            path.write_text(json.dumps([omitted, null]), encoding="utf-8")
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                self.assertEqual(load_history(path), [omitted, null])
+            self.assertEqual(stderr.getvalue(), "")
+
+    def test_boot_id_malformed_rejected(self) -> None:
+        malformed = (
+            '[{"time": 1, "procs": {}, "zombies": [], "boot_id": ""}]',
+            '[{"time": 1, "procs": {}, "zombies": [], "boot_id": 1}]',
+            '[{"time": 1, "procs": {}, "zombies": [], "boot_id": true}]',
+            '[{"time": 1, "procs": {}, "zombies": [], "boot_id": []}]',
+            '[{"time": 1, "procs": {}, "zombies": [], "boot_id": {}}]',
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "history.json"
+            for content in malformed:
+                with self.subTest(content=content):
+                    path.write_text(content, encoding="utf-8")
+                    stderr = io.StringIO()
+                    with redirect_stderr(stderr):
+                        self.assertEqual(load_history(path), [])
+                    self.assertEqual(len(stderr.getvalue().splitlines()), 1)
+                    self.assertIn("Warning:", stderr.getvalue())
+
     def test_default_state_path(self) -> None:
         with patch.dict(os.environ, {"XDG_STATE_HOME": "/fixture/state"}):
             self.assertEqual(default_history_path(), Path("/fixture/state/ramcleaner/history.json"))
