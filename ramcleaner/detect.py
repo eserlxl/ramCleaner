@@ -21,6 +21,18 @@ class Finding:
     rss_kb: int
     swap_kb: int
     reason: str
+    procs: tuple[Proc, ...] = ()
+
+
+_PROTECTED_COMMS = frozenset({"systemd", "kwin_wayland", "plasmashell", "ksmserver"})
+
+
+def is_protected(proc: Proc, config: Config) -> bool:
+    return (
+        proc.pid in (1, os.getpid(), os.getppid())
+        or proc.comm in _PROTECTED_COMMS
+        or proc.comm in config.protected
+    )
 
 
 def command_key(proc: Proc) -> tuple[str, str]:
@@ -44,11 +56,9 @@ def detect(
     history: list[dict],
     cgroup_root: str | Path,
 ) -> list[Finding]:
-    protected_pids = {1, os.getpid(), os.getppid()}
-    protected_names = {"systemd", "kwin_wayland", "plasmashell", "ksmserver", *config.protected}
     eligible = {
         pid: proc for pid, proc in second.items()
-        if pid not in protected_pids and proc.comm not in protected_names
+        if not is_protected(proc, config)
     }
     findings: list[Finding] = []
     clones: dict[tuple[str, tuple[str, str]], list[Proc]] = {}
@@ -71,15 +81,17 @@ def detect(
         swap = sum(proc.swap_kb for proc in members)
         if len(members) >= config.min_clones and rss + swap >= config.min_group_mb * 1024:
             owner, _ = resolve_owner(owner_cgroup)
+            ordered = tuple(sorted(members, key=lambda proc: proc.pid))
             findings.append(Finding(
                 key=f"idle-clones:{owner_cgroup}:{command}",
                 rule="idle-clones",
                 owner_label=owner.label,
-                pids=tuple(sorted(proc.pid for proc in members)),
+                pids=tuple(proc.pid for proc in ordered),
                 rss_kb=rss,
                 swap_kb=swap,
                 reason=f"{len(members)} idle copies of {' '.join(command).strip()} "
                        f"older than {config.min_age_hours} h",
+                procs=ordered,
             ))
 
     previous_zombies = set(history[-1]["zombies"]) if history else set()
@@ -105,6 +117,7 @@ def detect(
             swap_kb=parent.swap_kb,
             reason=f"Parent {parent.pid} ({parent.comm}) does not reap zombies "
                    + ", ".join(str(pid) for pid in sorted(children)),
+            procs=(parent,),
         ))
 
     now = time.time()
@@ -131,6 +144,7 @@ def detect(
                 swap_kb=proc.swap_kb,
                 reason=f"RSS + swap grew by {(sizes[-1] - sizes[0]) / 1024:.1f} MB "
                        f"across {len(sizes)} scans",
+                procs=(proc,),
             ))
 
     return sorted(findings, key=lambda finding: -(finding.rss_kb + finding.swap_kb))

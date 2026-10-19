@@ -71,18 +71,25 @@ The config can extend the list.
 
 Stopping is per finding and only after approval.
 
-- A **stop rule** in the config maps a command pattern to a graceful command, for example the
-  Codex daemon's `codex app-server daemon stop`. Rules run first.
-- Without a rule: SIGTERM to the listed pids, then wait up to `term_timeout` (default 10 s) and
-  report which pids are still alive. SIGKILL only with an explicit `--force`.
-- Before sending any signal, every pid is re-checked: same start time and same cmdline as in the
-  scan. A pid that was reused is skipped.
+- A **stop rule** in the config maps a regex pattern (matched with `re.search` against
+  `" ".join(cmdline)`) to a graceful command, for example the Codex daemon's
+  `codex app-server daemon stop`. Rules run first (split with `shlex.split`, never a shell,
+  60 s timeout) without sending a signal.
+- Without a rule: SIGTERM to the listed pids, then poll `/proc/PID` every 0.2 s up to
+  `term_timeout` (default 10 s) until each pid has exited (its `/proc/PID` directory is gone, its
+  `start_ticks` changed, or its state is `Z`) and report which pids are still alive. With an
+  explicit `--force`, send SIGKILL to the survivors and poll up to 2 s more.
+- Before sending any signal, every pid is re-checked: same start time (`start_ticks`) and same
+  cmdline as in the scan, and not protected. A pid that vanished, was reused, or is protected is
+  skipped.
 
 ## Interfaces
 
 - `ramcleaner report` — memory by owner, then the findings. Reads history without writing it;
   `--history-file` overrides the default state path.
-- `ramcleaner clean` — the findings, one `[y/N]` question each, then stops the approved ones.
+- `ramcleaner clean [--force]` — the findings, one `Stop it? [y/N] ` question each, then stops the
+  approved ones. Refuses with exit 2 if stdin is not a tty; exits 0 when nothing is approved or
+  every approved stop leaves no survivors, and 1 if any survivor remains.
 - `ramcleaner watch` — one scan for the systemd user timer; each new finding becomes a desktop
   notification with "Stop" and "Ignore" actions (`notify-send --action`). "Ignore" suppresses
   that finding's key for `ignore_for` (default 24 h).

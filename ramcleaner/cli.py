@@ -3,14 +3,40 @@ from __future__ import annotations
 
 import argparse
 import math
+import sys
 import time
 from collections.abc import Sequence
 
-from ramcleaner.config import ConfigError, load_config
-from ramcleaner.detect import detect
+from ramcleaner.actions import StopResult, stop_finding
+from ramcleaner.config import Config, ConfigError, load_config
+from ramcleaner.detect import Finding, detect
 from ramcleaner.history import default_history_path, load_history
 from ramcleaner.owner import OwnerUsage, group_by_owner
-from ramcleaner.procscan import clock_ticks, read_uptime, scan_processes
+from ramcleaner.procscan import Proc, clock_ticks, read_uptime, scan_processes
+
+
+def _add_scan_options(subparser: argparse.ArgumentParser) -> None:
+    subparser.add_argument(
+        "--interval",
+        type=float,
+        default=2.0,
+        help="Seconds between CPU samples (default: 2.0).",
+    )
+    subparser.add_argument(
+        "--history-file",
+        default=default_history_path(),
+        help="History file to read (default: XDG state directory).",
+    )
+    subparser.add_argument(
+        "--proc-root",
+        default=argparse.SUPPRESS,
+        help=argparse.SUPPRESS,
+    )
+    subparser.add_argument(
+        "--cgroup-root",
+        default=argparse.SUPPRESS,
+        help=argparse.SUPPRESS,
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -34,32 +60,23 @@ def _build_parser() -> argparse.ArgumentParser:
         "report",
         help="Print memory usage grouped by owning application or unit.",
     )
-    report_p.add_argument(
-        "--interval",
-        type=float,
-        default=2.0,
-        help="Seconds between CPU samples (default: 2.0).",
-    )
-    report_p.add_argument(
-        "--history-file",
-        default=default_history_path(),
-        help="History file to read (default: XDG state directory).",
-    )
+    _add_scan_options(report_p)
     report_p.add_argument(
         "--top",
         type=int,
         default=15,
         help="Maximum number of owners to display (default: 15).",
     )
-    report_p.add_argument(
-        "--proc-root",
-        default=argparse.SUPPRESS,
-        help=argparse.SUPPRESS,
+
+    clean_p = subparsers.add_parser(
+        "clean",
+        help="Interactively approve and stop reported findings.",
     )
-    report_p.add_argument(
-        "--cgroup-root",
-        default=argparse.SUPPRESS,
-        help=argparse.SUPPRESS,
+    _add_scan_options(clean_p)
+    clean_p.add_argument(
+        "--force",
+        action="store_true",
+        help="Send SIGKILL to processes that survive SIGTERM.",
     )
     return parser
 
@@ -71,36 +88,95 @@ def _format_row(usage: OwnerUsage) -> str:
     return f"{usage.owner.label:<32}  {held:<28}  {ram_mb:7.1f} MB RAM  {swap_mb:7.1f} MB swap"
 
 
+def _format_finding(finding: Finding) -> str:
+    return (
+        f"{finding.rule}  {finding.owner_label}  {len(finding.pids)} pids  "
+        f"{finding.rss_kb / 1024:.1f} MB RAM  {finding.swap_kb / 1024:.1f} MB swap  "
+        f"{finding.reason}"
+    )
+
+
+def _format_stop_result(result: StopResult) -> str:
+    stopped = ", ".join(str(pid) for pid in result.stopped) or "none"
+    alive = ", ".join(str(pid) for pid in result.still_alive) or "none"
+    skipped = (
+        ", ".join(f"{pid} ({reason})" for pid, reason in result.skipped) or "none"
+    )
+    return (
+        f"method={result.method}  stopped={stopped}  "
+        f"still_alive={alive}  skipped={skipped}"
+    )
+
+
+def _scan_and_detect(
+    args: argparse.Namespace,
+    config: Config,
+) -> tuple[dict[int, Proc], list[Finding]]:
+    history = load_history(args.history_file)
+    first = scan_processes(proc_root=args.proc_root)
+    time.sleep(args.interval)
+    procs = scan_processes(proc_root=args.proc_root)
+    findings = detect(
+        first,
+        procs,
+        config,
+        read_uptime(args.proc_root),
+        clock_ticks(),
+        history,
+        args.cgroup_root,
+    )
+    return procs, findings
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    if args.command == "report":
+    if args.command in ("report", "clean"):
         if not math.isfinite(args.interval) or args.interval < 0:
             parser.error("--interval must be finite and non-negative")
+        if args.command == "clean" and not sys.stdin.isatty():
+            print(
+                "clean needs an interactive terminal; ramcleaner watch sends notifications",
+                file=sys.stderr,
+            )
+            return 2
         try:
             config = load_config()
         except (ConfigError, OSError) as exc:
             parser.error(str(exc))
-        history = load_history(args.history_file)
-        first = scan_processes(proc_root=args.proc_root)
-        time.sleep(args.interval)
-        procs = scan_processes(proc_root=args.proc_root)
-        findings = detect(
-            first, procs, config, read_uptime(args.proc_root), clock_ticks(),
-            history, args.cgroup_root,
-        )
-        usages = group_by_owner(procs, cgroup_root=args.cgroup_root)
-        print("RAM = anonymous memory, page cache excluded")
-        for usage in usages[: max(args.top, 0)]:
-            print(_format_row(usage))
-        print("Findings:" if findings else "Findings: none")
+        procs, findings = _scan_and_detect(args, config)
+
+        if args.command == "report":
+            usages = group_by_owner(procs, cgroup_root=args.cgroup_root)
+            print("RAM = anonymous memory, page cache excluded")
+            for usage in usages[: max(args.top, 0)]:
+                print(_format_row(usage))
+            print("Findings:" if findings else "Findings: none")
+            for finding in findings:
+                print(_format_finding(finding))
+            return 0
+
+        if not findings:
+            print("Findings: none")
+            return 0
+        exit_code = 0
         for finding in findings:
-            print(
-                f"{finding.rule}  {finding.owner_label}  {len(finding.pids)} pids  "
-                f"{finding.rss_kb / 1024:.1f} MB RAM  {finding.swap_kb / 1024:.1f} MB swap  "
-                f"{finding.reason}"
-            )
-        return 0
+            print(_format_finding(finding))
+            try:
+                answer = input("Stop it? [y/N] ")
+            except EOFError:
+                answer = ""
+            if answer.strip().lower() in ("y", "yes"):
+                result = stop_finding(
+                    finding,
+                    config,
+                    proc_root=args.proc_root,
+                    force=args.force,
+                )
+                print(_format_stop_result(result))
+                if result.still_alive:
+                    exit_code = 1
+        return exit_code
 
     return 0

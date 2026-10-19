@@ -7,7 +7,7 @@ from dataclasses import replace
 from unittest.mock import patch
 
 from ramcleaner.config import Config
-from ramcleaner.detect import command_key, detect
+from ramcleaner.detect import command_key, detect, is_protected
 from ramcleaner.procscan import scan_processes
 from tests.fakeproc import build_tree
 
@@ -64,6 +64,7 @@ class DetectTest(unittest.TestCase):
         self.assertEqual(finding.rule, "idle-clones")
         self.assertEqual(finding.owner_label, "org.kde.yakuake tab 850422")
         self.assertEqual(finding.pids, (10, 11, 12, 13, 14))
+        self.assertEqual(finding.procs, tuple(self.procs[pid] for pid in (10, 11, 12, 13, 14)))
         self.assertEqual(finding.rss_kb, 5 * 256 * 1024)
         self.assertEqual(finding.swap_kb, 5 * 64 * 1024)
         self.assertEqual(finding.key,
@@ -120,6 +121,7 @@ class DetectTest(unittest.TestCase):
         self.assertEqual(finding.rule, "zombie")
         self.assertEqual(finding.key, "zombie:20:100")
         self.assertEqual(finding.pids, (20,))
+        self.assertEqual(finding.procs, (parent,))
         self.assertEqual(finding.rss_kb, 42)
         self.assertIn("Parent 20 (daemon) does not reap", finding.reason)
         self.assertIn("10, 11", finding.reason)
@@ -145,6 +147,7 @@ class DetectTest(unittest.TestCase):
         self.assertEqual(finding.rule, "growth")
         self.assertEqual(finding.key, "growth:10:100")
         self.assertEqual(finding.pids, (10,))
+        self.assertEqual(finding.procs, (proc,))
         self.assertIn("512.0 MB", finding.reason)
 
     def test_growth_thresholds_and_identity(self) -> None:
@@ -165,6 +168,7 @@ class DetectTest(unittest.TestCase):
 
     def test_protected_processes_never_appear(self) -> None:
         config = Config(min_clones=1, min_group_mb=1, protected=("custom",))
+        self.assertFalse(is_protected(self.procs[10], config))
         history = self.growth_history()
         protected = [replace(self.procs[10], comm=name) for name in
                      ("systemd", "kwin_wayland", "plasmashell", "ksmserver", "custom")]
@@ -173,6 +177,7 @@ class DetectTest(unittest.TestCase):
             proc = replace(proc, rss_kb=1024 * 1024)
             samples = {proc.pid: proc}
             with self.subTest(proc=proc):
+                self.assertTrue(is_protected(proc, config))
                 self.assertEqual(self.findings(first=samples, second=samples,
                                                config=config, history=history), [])
                 zombie = replace(self.procs[11], state="Z", ppid=proc.pid)
