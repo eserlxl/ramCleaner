@@ -40,6 +40,28 @@ def command_key(proc: Proc) -> tuple[str, str]:
     return executable, argument
 
 
+def command_label(executable: str, argument: str) -> str:
+    name = os.path.basename(argument)
+    if name and len(name) <= 40 and not any(char.isspace() for char in name):
+        return f"{executable} {name}"
+    return executable
+
+
+def format_age(seconds: float) -> str:
+    if seconds < 3600:
+        return f"{int(seconds // 60)} min"
+    if seconds < 48 * 3600:
+        return f"{int(seconds // 3600)} h"
+    return f"{int(seconds // 86400)} d"
+
+
+def format_size(kb: int) -> str:
+    mb = kb / 1024
+    if mb < 1024:
+        return f"{int(mb)} MB"
+    return f"{mb / 1024:.1f} GB"
+
+
 def _is_browser_child(proc: Proc) -> bool:
     # Chromium and Electron (--type=) and Firefox (-contentproc) run one content process per
     # background tab or window; they look like clones, but stopping one closes a tab.
@@ -89,6 +111,8 @@ def detect(
         if len(members) >= config.min_clones and rss + swap >= config.min_group_mb * 1024:
             owner, _ = resolve_owner(owner_cgroup)
             ordered = tuple(sorted(members, key=lambda proc: proc.pid))
+            # The youngest member has the greatest start_ticks (counted from boot).
+            age_s = uptime_s - max(proc.start_ticks for proc in members) / clk_tck
             findings.append(Finding(
                 key=f"idle-clones:{owner_cgroup}:{command}",
                 rule="idle-clones",
@@ -96,8 +120,8 @@ def detect(
                 pids=tuple(proc.pid for proc in ordered),
                 rss_kb=rss,
                 swap_kb=swap,
-                reason=f"{len(members)} idle copies of {' '.join(command).strip()} "
-                       f"older than {config.min_age_hours} h",
+                reason=f"{len(members)} idle copies of {command_label(*command)}, "
+                       f"running for at least {format_age(age_s)}",
                 procs=ordered,
             ))
 

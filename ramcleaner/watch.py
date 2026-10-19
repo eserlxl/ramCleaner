@@ -12,7 +12,7 @@ from typing import Any
 
 from ramcleaner.actions import StopResult, stop_finding
 from ramcleaner.config import Config
-from ramcleaner.detect import Finding, detect
+from ramcleaner.detect import Finding, detect, format_size
 from ramcleaner.history import append_scan, load_history, write_json_atomic
 from ramcleaner.procscan import clock_ticks, read_boot_id, read_uptime, scan_processes
 
@@ -20,21 +20,24 @@ from ramcleaner.procscan import clock_ticks, read_boot_id, read_uptime, scan_pro
 def format_finding(finding: Finding) -> str:
     return (
         f"{finding.rule}  {finding.owner_label}  {len(finding.pids)} pids  "
-        f"{finding.rss_kb / 1024:.1f} MB RAM  {finding.swap_kb / 1024:.1f} MB swap  "
+        f"{format_size(finding.rss_kb)} RAM  {format_size(finding.swap_kb)} swap  "
         f"{finding.reason}"
     )
 
 
 def format_stop_result(result: StopResult) -> str:
-    stopped = ", ".join(str(pid) for pid in result.stopped) or "none"
-    alive = ", ".join(str(pid) for pid in result.still_alive) or "none"
-    skipped = (
-        ", ".join(f"{pid} ({reason})" for pid, reason in result.skipped) or "none"
-    )
-    return (
-        f"method={result.method}  stopped={stopped}  "
-        f"still_alive={alive}  skipped={skipped}"
-    )
+    count = len(result.stopped)
+    noun = "process" if count == 1 else "processes"
+    stopped = ", ".join(str(pid) for pid in result.stopped)
+    parts = [f"{count} {noun} stopped: {stopped}." if stopped else f"{count} {noun} stopped."]
+    parts.append(f"Method: {result.method}.")
+    if result.still_alive:
+        alive = ", ".join(str(pid) for pid in result.still_alive)
+        parts.append(f"Still running: {alive}.")
+    if result.skipped:
+        skipped = ", ".join(f"{pid} ({reason})" for pid, reason in result.skipped)
+        parts.append(f"Skipped: {skipped}.")
+    return " ".join(parts)
 
 
 def _valid_ignored(data: object) -> bool:

@@ -62,9 +62,14 @@ with an id, the processes involved, their RSS and swap, and a one-line reason.
    first script argument, so every `bun .../start.mjs` shares one key). A group is a finding when
    it has at least `min_clones` members (default 4) that are idle (no CPU ticks between the two
    samples), older than `min_age_hours` (default 6 h), and whose RSS + swap totals at least
-   `min_group_mb` (default 1024). Only the idle members are proposed for stopping. Chromium and
-   Electron child processes (a `--type=` argument) and Firefox content processes (`-contentproc`)
-   are never clones: each is an open tab or window.
+   `min_group_mb` (default 1024). Only the idle members are proposed for stopping. The reason
+   names a short command: the executable plus the script basename when that basename has no
+   whitespace and is at most 40 characters (`bun start.mjs` stays; `python3 -c` code becomes
+   `python3`). It then says the youngest member has been `running for at least` a whole number of
+   minutes under 1 h, hours under 48 h, otherwise days. The finding key keeps the full command
+   key, so the shorter reason does not change `ignored.json`. Chromium and Electron child
+   processes (a `--type=` argument) and Firefox content processes (`-contentproc`) are never
+   clones: each is an open tab or window.
 2. **Unreaped zombies.** A zombie whose parent is alive and that has been a zombie in two scans in
    a row; the fix is on the parent, so the finding names the parent.
 3. **Growth.** A process whose RSS + swap grew by at least `min_growth_mb` (default 512) over the

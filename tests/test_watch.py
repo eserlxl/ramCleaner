@@ -17,12 +17,12 @@ from unittest.mock import patch
 from ramcleaner.actions import StopResult
 from ramcleaner.cli import main
 from ramcleaner.config import Config
-from ramcleaner.detect import Finding
+from ramcleaner.detect import Finding, format_size
 from ramcleaner.history import load_history
-from ramcleaner.notify import NotifySend
+from ramcleaner.notify import NotifySend, _format_notification
 from ramcleaner.owner import resolve_owner
 from ramcleaner.procscan import read_boot_id
-from ramcleaner.watch import load_ignored, run_watch
+from ramcleaner.watch import format_finding, format_stop_result, load_ignored, run_watch
 from tests.fakeproc import build_tree, write_proc
 
 
@@ -311,8 +311,12 @@ class WatchTest(unittest.TestCase):
                 self.assertEqual(len(notifier.informed), 1)
                 summary, body = notifier.informed[0]
                 self.assertIn("org.kde.yakuake tab 850422", summary)
-                self.assertIn("method=SIGTERM", body)
-                self.assertIn("stopped=10, 11, 12, 13", body)
+                self.assertNotIn("still_alive", body)
+                stopped = "4 processes stopped: 10, 11, 12, 13. Method: SIGTERM."
+                if still_alive:
+                    self.assertEqual(body, f"{stopped} Still running: 14.")
+                else:
+                    self.assertEqual(body, stopped)
                 self.assertFalse(self.ignored_file.exists())
 
     def test_timeout_outcome_neither_stops_nor_suppresses_and_passes_configured_timeout(
@@ -634,6 +638,49 @@ class WatchTest(unittest.TestCase):
                         self.assertFalse(held.closed)
 
 
+class FormatTest(unittest.TestCase):
+    def _finding(self, rss_kb: int, swap_kb: int = 0) -> Finding:
+        return Finding(
+            key="k",
+            rule="idle-clones",
+            owner_label="org.kde.yakuake",
+            pids=(10, 11),
+            rss_kb=rss_kb,
+            swap_kb=swap_kb,
+            reason="2 idle copies of bun start.mjs, running for at least 6 h",
+        )
+
+    def test_format_finding_and_notification_size(self) -> None:
+        small = self._finding(1023 * 1024)
+        large = self._finding(1024 * 1024)
+        self.assertIn("1023 MB RAM", format_finding(small))
+        self.assertIn("0 MB swap", format_finding(small))
+        self.assertIn("1.0 GB RAM", format_finding(large))
+        self.assertEqual(format_size(1023 * 1024), "1023 MB")
+        self.assertEqual(format_size(1024 * 1024), "1.0 GB")
+        small_summary, _ = _format_notification(small)
+        large_summary, _ = _format_notification(large)
+        self.assertEqual(small_summary, "org.kde.yakuake: 1023 MB in 2 processes")
+        self.assertEqual(large_summary, "org.kde.yakuake: 1.0 GB in 2 processes")
+
+    def test_format_stop_result_sentences(self) -> None:
+        self.assertEqual(
+            format_stop_result(StopResult("k", "SIGTERM", (10, 11, 12, 13), (), ())),
+            "4 processes stopped: 10, 11, 12, 13. Method: SIGTERM.",
+        )
+        self.assertEqual(
+            format_stop_result(StopResult("k", "SIGTERM", (10,), (14, 15), ())),
+            "1 process stopped: 10. Method: SIGTERM. Still running: 14, 15.",
+        )
+        self.assertEqual(
+            format_stop_result(StopResult(
+                "k", "rule: app stop", (), (), ((14, "pid reused"), (15, "not permitted")),
+            )),
+            "0 processes stopped. Method: rule: app stop. "
+            "Skipped: 14 (pid reused), 15 (not permitted).",
+        )
+
+
 class NotifySendTest(unittest.TestCase):
     def _finding(self, key: str = "k1", pids: tuple[int, ...] = (10, 11)) -> Finding:
         return Finding(
@@ -643,7 +690,7 @@ class NotifySendTest(unittest.TestCase):
             pids=pids,
             rss_kb=512 * 1024,
             swap_kb=256 * 1024,
-            reason="2 idle copies of bun start.mjs older than 6 h",
+            reason="2 idle copies of bun start.mjs, running for at least 6 h",
         )
 
     def test_ask_runs_notify_send_concurrently_and_maps_answers(self) -> None:
@@ -680,7 +727,7 @@ class NotifySendTest(unittest.TestCase):
             ],
         )
         self.assertEqual(argv[6], "org.kde.yakuake: 768 MB in 2 processes")
-        self.assertIn("2 idle copies of bun start.mjs older than 6 h", argv[7])
+        self.assertIn("2 idle copies of bun start.mjs, running for at least 6 h", argv[7])
         self.assertIn("10, 11", argv[7])
 
     def test_ask_uses_shared_deadline_and_kills_timed_out_process(self) -> None:

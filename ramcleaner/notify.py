@@ -6,15 +6,17 @@ import sys
 import time
 from collections.abc import Sequence
 
-from ramcleaner.detect import Finding
+from ramcleaner.detect import Finding, format_size
 
 _BASE_ARGV = ("notify-send", "--app-name=ramCleaner", "--urgency=normal")
 _INFORM_TIMEOUT_S = 10.0
 
 
 def _format_notification(finding: Finding) -> tuple[str, str]:
-    mb = (finding.rss_kb + finding.swap_kb) // 1024
-    summary = f"{finding.owner_label}: {mb} MB in {len(finding.pids)} processes"
+    summary = (
+        f"{finding.owner_label}: {format_size(finding.rss_kb + finding.swap_kb)} "
+        f"in {len(finding.pids)} processes"
+    )
     pids = ", ".join(str(pid) for pid in finding.pids)
     body = f"{finding.reason} (PIDs: {pids})"
     return summary, body

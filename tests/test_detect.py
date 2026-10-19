@@ -7,7 +7,15 @@ from dataclasses import replace
 from unittest.mock import patch
 
 from ramcleaner.config import Config
-from ramcleaner.detect import _is_browser_child, command_key, detect, is_protected
+from ramcleaner.detect import (
+    _is_browser_child,
+    command_key,
+    command_label,
+    detect,
+    format_age,
+    format_size,
+    is_protected,
+)
 from ramcleaner.procscan import scan_processes
 from tests.fakeproc import build_tree
 
@@ -70,9 +78,57 @@ class DetectTest(unittest.TestCase):
         self.assertEqual(finding.swap_kb, 5 * 64 * 1024)
         self.assertEqual(finding.key,
                          f"idle-clones:{self.cgroup}:{command_key(self.procs[10])}")
+        self.assertEqual(
+            finding.reason,
+            "5 idle copies of bun start.mjs, running for at least 27 h",
+        )
         changed = {pid: replace(proc, rss_kb=proc.rss_kb + 1)
                    for pid, proc in self.procs.items()}
         self.assertEqual(self.findings(second=changed)[0].key, finding.key)
+
+    def test_command_label_path_and_inline_code(self) -> None:
+        self.assertEqual(
+            command_label("bun", "/opt/context-mode/start.mjs"),
+            "bun start.mjs",
+        )
+        code = "b = bytearray(256 * 1024 * 1024); import time; time.sleep(1)"
+        self.assertEqual(command_label("python3", code), "python3")
+        self.assertEqual(command_label("python3", "x" * 40), "python3 " + "x" * 40)
+        self.assertEqual(command_label("python3", "x" * 41), "python3")
+
+    def test_format_age_boundaries(self) -> None:
+        self.assertEqual(format_age(3600 - 1), "59 min")
+        self.assertEqual(format_age(3600), "1 h")
+        self.assertEqual(format_age(48 * 3600 - 1), "47 h")
+        self.assertEqual(format_age(48 * 3600), "2 d")
+
+    def test_format_size_mb_below_1024_else_gb(self) -> None:
+        self.assertEqual(format_size(1023 * 1024), "1023 MB")
+        self.assertEqual(format_size(1024 * 1024), "1.0 GB")
+
+    def test_idle_reason_uses_youngest_member_and_keeps_command_key(self) -> None:
+        code = "b = bytearray(256 * 1024 * 1024); import time; time.sleep(1)"
+        cmdline = ("/usr/bin/python3", "-c", code)
+        procs = {
+            pid: replace(proc, comm="python3", cmdline=cmdline)
+            for pid, proc in self.procs.items()
+        }
+        # 180 s old: uptime 100000 - start_ticks/100 == 180.
+        young = replace(procs[10], start_ticks=9_982_000)
+        procs[10] = young
+        finding, = self.findings(
+            first=procs, second=procs, config=Config(min_age_hours=0),
+        )
+        self.assertEqual(
+            finding.reason,
+            "5 idle copies of python3, running for at least 3 min",
+        )
+        self.assertNotIn(code, finding.reason)
+        self.assertEqual(
+            finding.key,
+            f"idle-clones:{self.cgroup}:{command_key(young)}",
+        )
+        self.assertIn(code, finding.key)
 
     def test_browser_renderers_are_not_clones(self) -> None:
         renderers = {pid: replace(proc, cmdline=("/opt/app/electron", "--type=renderer"))
