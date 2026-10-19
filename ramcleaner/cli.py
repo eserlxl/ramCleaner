@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import math
 import sys
 import time
 from collections.abc import Sequence
+from datetime import datetime
+from pathlib import Path
 
 from ramcleaner.actions import stop_finding
 from ramcleaner.config import Config, ConfigError, load_config
@@ -14,7 +17,13 @@ from ramcleaner.history import default_history_path, load_history
 from ramcleaner.notify import NotifySend
 from ramcleaner.owner import OwnerUsage, group_by_owner
 from ramcleaner.procscan import Proc, clock_ticks, read_uptime, scan_processes
-from ramcleaner.watch import format_finding, format_stop_result, run_watch
+from ramcleaner.watch import (
+    format_finding,
+    format_stop_result,
+    load_ignored,
+    run_watch,
+    save_ignored,
+)
 
 
 def _add_scan_options(subparser: argparse.ArgumentParser) -> None:
@@ -86,6 +95,21 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Scan once, record history, and notify about new findings.",
     )
     _add_scan_options(watch_p)
+
+    ignored_p = subparsers.add_parser(
+        "ignored",
+        help="List or clear active watch suppressions.",
+    )
+    ignored_p.add_argument(
+        "--history-file",
+        default=default_history_path(),
+        help="History file to read (default: XDG state directory).",
+    )
+    ignored_p.add_argument(
+        "--clear",
+        action="store_true",
+        help="Clear all suppressed findings.",
+    )
     return parser
 
 
@@ -118,6 +142,32 @@ def _scan_and_detect(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    if args.command == "ignored":
+        history_path = Path(args.history_file)
+        state_dir = history_path.parent
+        ignored_path = state_dir / "ignored.json"
+        if args.clear:
+            state_dir.mkdir(parents=True, exist_ok=True)
+            lock_path = state_dir / "watch.lock"
+            with lock_path.open("a", encoding="utf-8") as lock_file:
+                try:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    print("another watch is running", file=sys.stderr)
+                    return 1
+                save_ignored(ignored_path, {}, 0.0)
+            return 0
+
+        ignored = load_ignored(ignored_path)
+        now = time.time()
+        active = {key: until for key, until in ignored.items() if until > now}
+        if not active:
+            print("Suppressed findings: none")
+            return 0
+        for key, until in active.items():
+            print(f"{key}  until {datetime.fromtimestamp(until).isoformat(timespec="seconds")}")
+        return 0
 
     if args.command in ("report", "clean", "watch"):
         if not math.isfinite(args.interval) or args.interval < 0:

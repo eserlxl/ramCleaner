@@ -4,17 +4,18 @@
 
 ```text
 usage: ramcleaner [-h] [--proc-root PROC_ROOT] [--cgroup-root CGROUP_ROOT]
-                  {report,clean,watch} ...
+                  {report,clean,watch,ignored} ...
 
 Report memory usage attributed to owning applications and units.
 
 positional arguments:
-  {report,clean,watch}
+  {report,clean,watch,ignored}
     report              Print memory usage grouped by owning application or
                         unit.
     clean               Interactively approve and stop reported findings.
     watch               Scan once, record history, and notify about new
                         findings.
+    ignored             List or clear active watch suppressions.
 
 options:
   -h, --help            show this help message and exit
@@ -92,6 +93,25 @@ Runs a single scan pass intended for `ramcleaner-watch.service`:
 4. Prints each unsuppressed finding to `stdout` and starts `notify-send --app-name=ramCleaner --urgency=normal --expire-time=<(ask_timeout_minutes * 60 + 60) * 1000> --action=stop=Stop --action=ignore=Ignore` concurrently for all unsuppressed findings, waiting against a shared `ask_timeout_minutes` deadline (default `10` minutes). Any `notify-send` process still running at the deadline is killed and reaped with outcome `"timeout"`.
 5. For each finding where the user clicked `Stop`, stops the finding (without `--force`) and sends a follow-up informational notification summarizing the result. For each timed-out finding (`"timeout"`), prints `<owner_label>: no answer, will ask again` to `stdout` without stopping or suppressing it. For every other answer (`Ignore`, notification closed, or `notify-send` unavailable), records `now + ignore_for_hours * 3600` in `ignored.json`.
 
+### `ramcleaner ignored`
+
+```text
+usage: ramcleaner ignored [-h] [--history-file HISTORY_FILE] [--clear]
+
+options:
+  -h, --help            show this help message and exit
+  --history-file HISTORY_FILE
+                        History file to read (default: XDG state directory).
+  --clear               Clear all suppressed findings.
+```
+
+Lists or clears findings suppressed by `ramcleaner watch`:
+
+- Without `--clear`, reads `ignored.json` from the parent directory of `--history-file` and prints one `<key>  until <local ISO time>` line per entry whose expiry is in the future. Expired entries are omitted. If there are no active suppressions or `ignored.json` does not exist, prints `Suppressed findings: none`.
+- With `--clear`, takes a non-blocking exclusive lock on `watch.lock` in the parent directory of `--history-file`. If another `watch` process holds the lock, prints `another watch is running` to `stderr` and exits `1`. Otherwise, empties `ignored.json` and exits `0`.
+
+Neither mode touches `history.json`.
+
 ## State files
 
 By default, state files live in `$XDG_STATE_HOME/ramcleaner/` when `XDG_STATE_HOME` is set and non-empty, or `~/.local/state/ramcleaner/` otherwise. Passing `--history-file PATH` places `ignored.json` and `watch.lock` in `PATH`'s parent directory.
@@ -99,8 +119,8 @@ By default, state files live in `$XDG_STATE_HOME/ramcleaner/` when `XDG_STATE_HO
 | File | Written by | Purpose |
 | --- | --- | --- |
 | `history.json` | `ramcleaner watch` | JSON array of scan records `{"time": <float>, "procs": {"<pid>:<start_ticks>": <rss_kb + swap_kb>}, "zombies": ["<pid>:<start_ticks>"]}`. Retained for `history_hours` (default `24` h). Read by `report`, `clean`, and `watch`. |
-| `ignored.json` | `ramcleaner watch` | JSON object `{"<finding.key>": <expiry_timestamp>}` tracking findings suppressed for `ignore_for_hours` (default `24` h). Expired entries (`until <= now`) are pruned when saved. |
-| `watch.lock` | `ramcleaner watch` | Advisory `flock` lock file preventing overlapping `ramcleaner watch` runs. |
+| `ignored.json` | `ramcleaner watch`, `ramcleaner ignored --clear` | JSON object `{"<finding.key>": <expiry_timestamp>}` tracking findings suppressed for `ignore_for_hours` (default `24` h). Expired entries (`until <= now`) are pruned when saved. Read and cleared by `ignored`. |
+| `watch.lock` | `ramcleaner watch`, `ramcleaner ignored --clear` | Advisory `flock` lock file preventing overlapping `ramcleaner watch` runs or suppression clearing. |
 
 If `history.json` or `ignored.json` is malformed or unreadable, ramCleaner prints a `Warning:` line to `stderr` and treats the file as empty.
 
@@ -108,6 +128,6 @@ If `history.json` or `ignored.json` is malformed or unreadable, ramCleaner print
 
 | Exit status | Meaning |
 | --- | --- |
-| `0` | Success: `report` completed; `clean` or `watch` had no findings, no finding was approved, another `watch` held `watch.lock`, or every approved stop left no surviving processes (`still_alive` is empty). |
-| `1` | Partial stop: at least one approved finding in `clean` or `watch` still had surviving target processes (`still_alive` is non-empty) after waiting for exit. |
+| `0` | Success: `report` completed; `ignored` listed active suppressions or emptied `ignored.json`; `clean` or `watch` had no findings, no finding was approved, another `watch` held `watch.lock`, or every approved stop left no surviving processes (`still_alive` is empty). |
+| `1` | Partial stop or lock collision: at least one approved finding in `clean` or `watch` still had surviving target processes (`still_alive` is non-empty) after waiting for exit; or `ramcleaner ignored --clear` found `watch.lock` held by another watch process. |
 | `2` | Usage or configuration error: invalid CLI arguments (including negative or non-finite `--interval`), invalid or unreadable `config.toml`, or `ramcleaner clean` run when `stdin` is not a TTY. |

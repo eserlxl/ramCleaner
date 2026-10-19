@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -330,6 +331,116 @@ class WatchTest(unittest.TestCase):
         self.assertEqual(rc, 0)
         mocked_watch.assert_called_once()
         self.assertIsInstance(mocked_watch.call_args.kwargs["notifier"], NotifySend)
+
+    def test_ignored_listing_hides_expired_and_preserves_history(self) -> None:
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        now = 1000.0
+        active_until = now + 3600.0
+        expired_until = now - 50.0
+        self.ignored_file.write_text(
+            json.dumps(
+                {
+                    "idle-clones:tab(850422).scope": active_until,
+                    "expired:tab(850422).scope": expired_until,
+                }
+            ),
+            encoding="utf-8",
+        )
+        stdout = io.StringIO()
+        with (
+            patch("ramcleaner.cli.time.time", return_value=now),
+            redirect_stdout(stdout),
+        ):
+            rc = main(["ignored", "--history-file", str(self.history_file)])
+        self.assertEqual(rc, 0)
+        expected_iso = datetime.fromtimestamp(active_until).isoformat(timespec="seconds")
+        expected_line = f"idle-clones:tab(850422).scope  until {expected_iso}"
+        self.assertEqual(stdout.getvalue().splitlines(), [expected_line])
+        self.assertFalse(self.history_file.exists())
+
+    def test_ignored_listing_when_none_or_all_expired(self) -> None:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            rc = main(["ignored", "--history-file", str(self.history_file)])
+        self.assertEqual(rc, 0)
+        self.assertEqual(stdout.getvalue().strip(), "Suppressed findings: none")
+
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        self.ignored_file.write_text(
+            json.dumps({"expired:key": 500.0}),
+            encoding="utf-8",
+        )
+        stdout = io.StringIO()
+        with (
+            patch("ramcleaner.cli.time.time", return_value=1000.0),
+            redirect_stdout(stdout),
+        ):
+            rc = main(["ignored", "--history-file", str(self.history_file)])
+        self.assertEqual(rc, 0)
+        self.assertEqual(stdout.getvalue().strip(), "Suppressed findings: none")
+        self.assertFalse(self.history_file.exists())
+
+    def test_ignored_clear_empties_file_and_allows_reask(self) -> None:
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        self.ignored_file.write_text(
+            json.dumps({"idle-clones:app.slice/app-org.kde.yakuake-1.scope/tab(850422).scope": 5000.0}),
+            encoding="utf-8",
+        )
+        self.assertEqual(len(load_ignored(self.ignored_file)), 1)
+
+        rc = main(["ignored", "--history-file", str(self.history_file), "--clear"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(load_ignored(self.ignored_file), {})
+        self.assertFalse(self.history_file.exists())
+
+        notifier = _FakeNotifier("ignore")
+        with redirect_stdout(io.StringIO()):
+            rc_watch = run_watch(
+                self._args(), Config(), notifier=notifier, now=lambda: 1000.0
+            )
+        self.assertEqual(rc_watch, 0)
+        self.assertEqual(len(notifier.asked), 1)
+
+    def test_ignored_clear_when_lock_held_fails_with_exit_1(self) -> None:
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        initial_data = {"idle-clones:tab(850422).scope": 5000.0}
+        self.ignored_file.write_text(json.dumps(initial_data), encoding="utf-8")
+        lock_path = self.state_dir / "watch.lock"
+
+        with lock_path.open("w", encoding="utf-8") as held:
+            fcntl.flock(held.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                rc = main(["ignored", "--history-file", str(self.history_file), "--clear"])
+
+        self.assertEqual(rc, 1)
+        self.assertEqual(stderr.getvalue().strip(), "another watch is running")
+        self.assertEqual(load_ignored(self.ignored_file), initial_data)
+        self.assertFalse(self.history_file.exists())
+
+    def test_ignored_uses_default_history_file(self) -> None:
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        self.ignored_file.write_text(
+            json.dumps({"default:key": 2000.0}),
+            encoding="utf-8",
+        )
+        stdout = io.StringIO()
+        with (
+            patch("ramcleaner.cli.time.time", return_value=1000.0),
+            redirect_stdout(stdout),
+        ):
+            rc = main(["ignored"])
+        self.assertEqual(rc, 0)
+        expected_iso = datetime.fromtimestamp(2000.0).isoformat()
+        self.assertEqual(
+            stdout.getvalue().strip(),
+            f"default:key  until {expected_iso}",
+        )
+
+        rc_clear = main(["ignored", "--clear"])
+        self.assertEqual(rc_clear, 0)
+        self.assertEqual(load_ignored(self.ignored_file), {})
+        self.assertFalse(self.history_file.exists())
 
 
 class NotifySendTest(unittest.TestCase):
