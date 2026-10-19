@@ -34,7 +34,8 @@ The owner of a process is derived from its cgroup path, not its parent:
 
 - `app-<appid>-<n>.scope` and `app-<appid>@<id>.service` → the application `<appid>`
   (for example `org.kde.yakuake`), with any `\x2d` escape decoded.
-- a `tab(<pid>).scope` (Konsole/Yakuake) below such a scope adds the tab.
+- a `tab(<pid>).scope` (Konsole/Yakuake) below such a scope is its own owner, "`<appid>` tab
+  `<pid>`": each tab runs unrelated work, and a daemon started from a tab stays in it.
 - `<name>.service` under `app.slice` or `session.slice` → the unit `<name>`.
 
 A finding names both the owner and the process that is really responsible (the root of the

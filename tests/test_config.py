@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from ramcleaner.config import Config, ConfigError, load_config
+
+
+class ConfigTest(unittest.TestCase):
+    def test_missing_file_returns_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = load_config(Path(tmp) / "nonexistent.toml")
+            self.assertEqual(cfg, Config())
+            self.assertEqual(cfg.min_clones, 4)
+            self.assertEqual(cfg.min_age_hours, 6)
+            self.assertEqual(cfg.min_group_mb, 1024)
+            self.assertEqual(cfg.history_hours, 24)
+            self.assertEqual(cfg.min_growth_mb, 512)
+            self.assertEqual(cfg.term_timeout, 10)
+            self.assertEqual(cfg.ignore_for_hours, 24)
+            self.assertEqual(cfg.protected, ())
+            self.assertEqual(cfg.stop_rules, ())
+
+    def test_valid_config_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_path = Path(tmp) / "config.toml"
+            cfg_path.write_text(
+                'min_clones = 6\n'
+                'protected = ["my-daemon"]\n'
+                'stop_rules = [["codex app-server", "codex app-server daemon stop"]]\n',
+                encoding="utf-8",
+            )
+            cfg = load_config(cfg_path)
+            self.assertEqual(cfg.min_clones, 6)
+            self.assertEqual(cfg.protected, ("my-daemon",))
+            self.assertEqual(
+                cfg.stop_rules,
+                (("codex app-server", "codex app-server daemon stop"),),
+            )
+
+    def test_unknown_key_raises_config_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_path = Path(tmp) / "config.toml"
+            cfg_path.write_text("bogus_key = 1\n", encoding="utf-8")
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(cfg_path)
+            self.assertIn("bogus_key", str(ctx.exception))
+
+    def test_wrong_type_raises_config_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_path = Path(tmp) / "config.toml"
+            cfg_path.write_text('min_clones = "four"\n', encoding="utf-8")
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(cfg_path)
+            self.assertIn("min_clones", str(ctx.exception))
+
+
+if __name__ == "__main__":
+    unittest.main()
