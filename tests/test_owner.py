@@ -227,6 +227,106 @@ class OwnerTest(unittest.TestCase):
         self.assertEqual([u.cgroup for u in usages], [child, grandchild, parent])
         self.assertEqual([u.total_bytes for u in usages], [750 * mib, 450 * mib, 300 * mib])
 
+    def test_unreadable_grandchild_falls_back_and_is_subtracted_once(self) -> None:
+        parent = (
+            "/user.slice/user-1000.slice/user@1000.service/app.slice/"
+            "app-org.kde.konsole-2469.scope"
+        )
+        child = f"{parent}/tab(20).scope"
+        grandchild = f"{child}/tab(21).scope"
+        mib = 1024**2
+
+        with tempfile.TemporaryDirectory() as tmp:
+            proc_root, cgroup_root = build_tree(
+                tmp,
+                [
+                    {"pid": 10, "ppid": 1, "comm": "konsole", "uid": 1000,
+                     "rss_kb": 1, "swap_kb": 0, "cgroup": parent},
+                    {"pid": 20, "ppid": 10, "comm": "bash", "uid": 1000,
+                     "rss_kb": 1, "swap_kb": 0, "cgroup": child},
+                    {"pid": 21, "ppid": 20, "comm": "agent", "uid": 1000,
+                     "rss_kb": 300 * 1024, "swap_kb": 150 * 1024, "cgroup": grandchild},
+                ],
+                cgroups={
+                    parent: (1000 * mib, 500 * mib, 200 * mib),
+                    child: (800 * mib, 400 * mib, 160 * mib),
+                },
+            )
+            usages = group_by_owner(
+                scan_processes(proc_root=proc_root, uid=1000),
+                cgroup_root=cgroup_root,
+            )
+
+        by_cg = {u.cgroup: u for u in usages}
+        self.assertEqual(
+            [by_cg[parent].ram_bytes, by_cg[child].ram_bytes, by_cg[grandchild].ram_bytes],
+            [200 * mib, 500 * mib, 300 * mib],
+        )
+        self.assertEqual(
+            [by_cg[parent].swap_bytes, by_cg[child].swap_bytes, by_cg[grandchild].swap_bytes],
+            [100 * mib, 250 * mib, 150 * mib],
+        )
+        self.assertEqual(
+            [
+                by_cg[parent].zswap_bytes,
+                by_cg[child].zswap_bytes,
+                by_cg[grandchild].zswap_bytes,
+            ],
+            [40 * mib, 160 * mib, 0 * mib],
+        )
+        self.assertIsNone(by_cg[grandchild].cgroup_bytes)
+
+    def test_unreadable_child_bucket_excludes_deeper_owners(self) -> None:
+        parent = (
+            "/user.slice/user-1000.slice/user@1000.service/app.slice/"
+            "app-org.kde.konsole-2469.scope"
+        )
+        child = f"{parent}/tab(20).scope"
+        grandchild = f"{child}/tab(21).scope"
+        mib = 1024**2
+
+        with tempfile.TemporaryDirectory() as tmp:
+            proc_root, cgroup_root = build_tree(
+                tmp,
+                [
+                    {"pid": 10, "ppid": 1, "comm": "konsole", "uid": 1000,
+                     "rss_kb": 1, "swap_kb": 0, "cgroup": parent},
+                    {"pid": 20, "ppid": 10, "comm": "bash", "uid": 1000,
+                     "rss_kb": 500 * 1024, "swap_kb": 250 * 1024, "cgroup": child},
+                    {"pid": 21, "ppid": 20, "comm": "agent", "uid": 1000,
+                     "rss_kb": 1, "swap_kb": 0, "cgroup": grandchild},
+                ],
+                cgroups={
+                    parent: (1000 * mib, 500 * mib, 200 * mib),
+                    grandchild: (300 * mib, 150 * mib, 60 * mib),
+                },
+            )
+            usages = group_by_owner(
+                scan_processes(proc_root=proc_root, uid=1000),
+                cgroup_root=cgroup_root,
+            )
+
+        by_cg = {u.cgroup: u for u in usages}
+        self.assertEqual(
+            [by_cg[parent].ram_bytes, by_cg[child].ram_bytes, by_cg[grandchild].ram_bytes],
+            [200 * mib, 500 * mib, 300 * mib],
+        )
+        self.assertEqual(
+            [by_cg[parent].swap_bytes, by_cg[child].swap_bytes, by_cg[grandchild].swap_bytes],
+            [100 * mib, 250 * mib, 150 * mib],
+        )
+        self.assertEqual(
+            [
+                by_cg[parent].zswap_bytes,
+                by_cg[child].zswap_bytes,
+                by_cg[grandchild].zswap_bytes,
+            ],
+            [140 * mib, 0 * mib, 60 * mib],
+        )
+        self.assertEqual([u.cgroup for u in usages], [child, grandchild, parent])
+        self.assertEqual([u.total_bytes for u in usages], [750 * mib, 450 * mib, 300 * mib])
+        self.assertIsNone(by_cg[child].cgroup_bytes)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -26,9 +26,15 @@ Per process: pid, ppid, state (`/proc/PID/stat`), comm, cmdline, uid, `VmRSS`, `
 
 Per cgroup: the `anon` line of `memory.stat`, `memory.swap.current`, and `memory.zswap.current` (0
 when absent on kernels without zswap). RAM means anonymous memory; reclaimable page cache is
-excluded, and zswap is the compressed share of swap still held in RAM. When an owner cgroup's
-`memory.stat` or `memory.swap.current` cannot be read, its row falls back to the summed `VmRSS`
-and `VmSwap` of its processes, which includes file-backed pages.
+excluded, and zswap is the compressed share of swap still held in RAM, reported separately from RAM
+and swap. Those counters include every descendant cgroup. Exclusive charges are computed bottom-up,
+deepest owner first, so each readable ancestor subtracts the exclusive RAM, swap, and zswap of nested
+owners once. When an owner cgroup's `memory.stat` or `memory.swap.current` cannot be read, its row
+falls back to the summed `VmRSS` and `VmSwap` of processes in that owner's own bucket. That bucket
+excludes deeper owner buckets. A readable ancestor still subtracts those exclusive charges once,
+whether the nested owner is an unreadable grandchild or an unreadable intermediate child above a
+readable grandchild. The fallback includes file-backed pages. The report appends
+`VmRSS: cgroup memory unreadable` only on the unreadable row, and zswap on that row is 0.
 
 Only the invoking user's processes are considered.
 

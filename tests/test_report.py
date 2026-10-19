@@ -310,6 +310,48 @@ class ReportTest(unittest.TestCase):
         self.assertTrue(rows[1].startswith("bar"))
         self.assertTrue(rows[1].endswith("  (VmRSS: cgroup memory unreadable)"))
 
+    def test_report_marks_only_unreadable_mixed_hierarchy_rows(self) -> None:
+        parent = (
+            "/user.slice/user-1000.slice/user@1000.service/app.slice/"
+            "app-org.kde.konsole-2469.scope"
+        )
+        child = f"{parent}/tab(20).scope"
+        grandchild = f"{child}/tab(21).scope"
+        mib = 1024**2
+        proc_root, cgroup_root = build_tree(
+            self.root,
+            [
+                {"pid": 10, "ppid": 1, "comm": "konsole", "rss_kb": 1, "swap_kb": 0,
+                 "cgroup": parent},
+                {"pid": 20, "ppid": 10, "comm": "bash", "rss_kb": 500 * 1024,
+                 "swap_kb": 250 * 1024, "cgroup": child},
+                {"pid": 21, "ppid": 20, "comm": "agent", "rss_kb": 1, "swap_kb": 0,
+                 "cgroup": grandchild},
+            ],
+            cgroups={
+                parent: (1000 * mib, 500 * mib, 200 * mib),
+                grandchild: (300 * mib, 150 * mib, 60 * mib),
+            },
+        )
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            rc = main([
+                "report", "--proc-root", str(proc_root), "--cgroup-root", str(cgroup_root),
+                "--interval", "0",
+            ])
+        self.assertEqual(rc, 0)
+        rows = stdout.getvalue().splitlines()[1:4]
+        marker = "  (VmRSS: cgroup memory unreadable)"
+        self.assertTrue(rows[0].startswith("org.kde.konsole tab 20"))
+        self.assertTrue(rows[0].endswith(marker))
+        self.assertNotIn("zswap", rows[0])
+        self.assertTrue(rows[1].startswith("org.kde.konsole tab 21"))
+        self.assertNotIn(marker, rows[1])
+        self.assertIn("in zswap", rows[1])
+        self.assertTrue(rows[2].startswith("org.kde.konsole  "))
+        self.assertNotIn(marker, rows[2])
+        self.assertIn("in zswap", rows[2])
+
     def test_report_history_note_when_scans_under_four(self) -> None:
         proc_root, cgroup_root = build_tree(self.root, [])
         stdout = io.StringIO()
