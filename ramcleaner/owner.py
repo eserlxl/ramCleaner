@@ -13,6 +13,23 @@ _APP_SERVICE_RE = re.compile(r"^app-(.+)@([^@]*)\.service$")
 _TAB_SCOPE_RE = re.compile(r"^tab\(([^)]+)\)\.scope$")
 
 
+def _escape_unprintable(text: str) -> str:
+    # Cgroup names are chosen by the user who owns the delegated subtree.
+    parts: list[str] = []
+    for char in text:
+        if char.isprintable():
+            parts.append(char)
+            continue
+        code = ord(char)
+        if code < 0x100:
+            parts.append(f"\\x{code:02x}")
+        elif code < 0x10000:
+            parts.append(f"\\u{code:04x}")
+        else:
+            parts.append(f"\\U{code:08x}")
+    return "".join(parts)
+
+
 @dataclass(frozen=True)
 class Owner:
     app: str | None = None
@@ -23,9 +40,12 @@ class Owner:
     def label(self) -> str:
         if self.app is not None:
             if self.tab is not None:
-                return f"{self.app} tab {self.tab}"
-            return self.app
-        return self.unit or ""
+                text = f"{self.app} tab {self.tab}"
+            else:
+                text = self.app
+        else:
+            text = self.unit or ""
+        return _escape_unprintable(text)
 
 
 @dataclass(frozen=True)

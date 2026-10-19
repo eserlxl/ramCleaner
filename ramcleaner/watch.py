@@ -9,7 +9,7 @@ import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from ramcleaner.actions import StopResult, stop_finding
 from ramcleaner.config import Config
@@ -113,39 +113,53 @@ def _user_name(uid: int) -> str:
         return str(uid)
 
 
-def _other_user_warnings(procs: dict[int, Proc], min_mb: int) -> list[Finding]:
+class OtherUserGroup(NamedTuple):
+    owner_cg: str
+    label: str
+    names: str
+    members: tuple[Proc, ...]
+
+    @property
+    def total_kb(self) -> int:
+        return sum(proc.rss_kb + proc.swap_kb for proc in self.members)
+
+
+def other_user_groups(procs: dict[int, Proc], min_mb: int) -> list[OtherUserGroup]:
     grouped: dict[str, list[Proc]] = {}
     labels: dict[str, str] = {}
     for proc in procs.values():
         owner, owner_cg = resolve_owner(proc.cgroup)
         grouped.setdefault(owner_cg, []).append(proc)
         labels[owner_cg] = owner.label
-    threshold_kb = min_mb * 1024
-    warnings: list[Finding] = []
+    groups: list[OtherUserGroup] = []
     for owner_cg, members in grouped.items():
-        rss_kb = sum(proc.rss_kb for proc in members)
-        swap_kb = sum(proc.swap_kb for proc in members)
-        if rss_kb + swap_kb < threshold_kb:
-            continue
         uids = sorted({proc.uid for proc in members})
-        names = ", ".join(_user_name(uid) for uid in uids)
-        ordered = tuple(sorted(members, key=lambda proc: proc.pid))
-        warnings.append(
-            Finding(
-                key=f"other-user:{owner_cg}",
-                rule="other-user",
-                owner_label=labels[owner_cg],
-                pids=tuple(proc.pid for proc in ordered),
-                rss_kb=rss_kb,
-                swap_kb=swap_kb,
-                reason=f"held by {names}; information only, not stopped",
-                procs=ordered,
-            )
+        group = OtherUserGroup(
+            owner_cg=owner_cg,
+            label=labels[owner_cg],
+            names=", ".join(_user_name(uid) for uid in uids),
+            members=tuple(sorted(members, key=lambda proc: proc.pid)),
         )
-    warnings.sort(
-        key=lambda finding: (-(finding.rss_kb + finding.swap_kb), finding.key)
-    )
-    return warnings
+        if group.total_kb >= min_mb * 1024:
+            groups.append(group)
+    groups.sort(key=lambda group: (-group.total_kb, group.owner_cg))
+    return groups
+
+
+def _other_user_warnings(procs: dict[int, Proc], min_mb: int) -> list[Finding]:
+    return [
+        Finding(
+            key=f"other-user:{group.owner_cg}",
+            rule="other-user",
+            owner_label=group.label,
+            pids=tuple(proc.pid for proc in group.members),
+            rss_kb=sum(proc.rss_kb for proc in group.members),
+            swap_kb=sum(proc.swap_kb for proc in group.members),
+            reason=f"held by {group.names}; information only, not stopped",
+            procs=group.members,
+        )
+        for group in other_user_groups(procs, min_mb)
+    ]
 
 
 def run_watch(

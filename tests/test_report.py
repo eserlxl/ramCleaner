@@ -501,7 +501,7 @@ class ReportTest(unittest.TestCase):
             with (
                 redirect_stdout(stdout),
                 redirect_stderr(io.StringIO()),
-                patch("ramcleaner.cli.pwd.getpwuid", side_effect=names),
+                patch("ramcleaner.watch.pwd.getpwuid", side_effect=names),
             ):
                 rc = main(
                     [
@@ -564,6 +564,54 @@ class ReportTest(unittest.TestCase):
             ],
         )
         self.assertNotIn("idle-clones", text)
+
+    def test_report_escapes_other_user_cgroup_controls(self) -> None:
+        other_uid = 0 if os.getuid() != 0 else 65534
+        raw = "\x1b]0;pwned\x07"
+        proc_root, cgroup_root = build_tree(
+            self.root,
+            [
+                {
+                    "pid": 50,
+                    "ppid": 1,
+                    "comm": "pwned",
+                    "uid": other_uid,
+                    "rss_kb": 512 * 1024,
+                    "cgroup": f"/user.slice/user-{other_uid}.slice/{raw}",
+                },
+            ],
+        )
+        stdout = io.StringIO()
+        with (
+            redirect_stdout(stdout),
+            redirect_stderr(io.StringIO()),
+            patch(
+                "ramcleaner.watch.pwd.getpwuid",
+                return_value=SimpleNamespace(pw_name="other"),
+            ),
+        ):
+            rc = main(
+                [
+                    "report",
+                    "--proc-root",
+                    str(proc_root),
+                    "--cgroup-root",
+                    str(cgroup_root),
+                    "--interval",
+                    "0",
+                ]
+            )
+        self.assertEqual(rc, 0)
+        text = stdout.getvalue()
+        self.assertEqual(
+            text,
+            "RAM = anonymous memory, page cache excluded\n"
+            "Other users (information only):\n"
+            "other  \\x1b]0;pwned\\x07  512 MB\n"
+            "Findings: none\n",
+        )
+        self.assertNotIn("\x1b", text)
+        self.assertNotIn("\x07", text)
 
 
 if __name__ == "__main__":

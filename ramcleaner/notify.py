@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
 
+import html
 import os
 import subprocess
 import sys
@@ -74,7 +75,8 @@ def _format_notification(finding: Finding) -> tuple[str, str]:
         f"in {len(finding.pids)} processes"
     )
     pids = ", ".join(str(pid) for pid in finding.pids)
-    body = f"{finding.reason} (PIDs: {pids})"
+    # Summary is plain text; Plasma renders the body as markup.
+    body = html.escape(f"{finding.reason} (PIDs: {pids})", quote=False)
     return summary, body
 
 
@@ -108,6 +110,8 @@ class NotifySend:
                 *_BASE_ARGV,
                 f"--expire-time={expire_ms}",
                 *actions,
+                # Labels can come from another user's cgroup names; never parse them as options.
+                "--",
                 summary,
                 body,
             ]
@@ -154,7 +158,7 @@ class NotifySend:
         return answers
 
     def inform(self, summary: str, body: str = "") -> None:
-        argv = [*_BASE_ARGV, summary, body]
+        argv = [*_BASE_ARGV, "--", summary, body]
         try:
             proc = subprocess.Popen(argv, stdout=subprocess.PIPE, text=True)
             try:

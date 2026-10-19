@@ -1062,6 +1062,47 @@ class FormatTest(unittest.TestCase):
         self.assertEqual(small_summary, "org.kde.yakuake: 1023 MB in 2 processes")
         self.assertEqual(large_summary, "org.kde.yakuake: 1.0 GB in 2 processes")
 
+    def test_notification_body_escapes_markup_in_label(self) -> None:
+        finding = Finding(
+            key="k",
+            rule="other-user",
+            owner_label="<b>x</b>",
+            pids=(1,),
+            rss_kb=1024,
+            swap_kb=0,
+            reason="held by <b>x</b>; information only, not stopped",
+        )
+        summary, body = _format_notification(finding)
+        self.assertEqual(summary, "<b>x</b>: 1 MB in 1 processes")
+        self.assertIn("&lt;b&gt;", body)
+        self.assertNotIn("<", body)
+
+    def test_label_starting_with_dash_is_never_parsed_as_an_option(self) -> None:
+        finding = Finding(
+            key="k",
+            rule="other-user",
+            owner_label="--icon=evil",
+            pids=(1,),
+            rss_kb=1024,
+            swap_kb=0,
+            reason="held by other; information only, not stopped",
+        )
+        created: list[_FakePopen] = []
+
+        def fake_popen(argv, *, stdout=None, text=None):
+            proc = _FakePopen(argv, stdout_text="later\n")
+            created.append(proc)
+            return proc
+
+        with patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen):
+            NotifySend().ask([finding], 30)
+            NotifySend().inform("--icon=evil: 1 process stopped", "body")
+
+        for proc in created:
+            separator = proc.argv.index("--")
+            self.assertEqual(proc.argv[separator + 1].split(":")[0], "--icon=evil")
+            self.assertEqual(len(proc.argv), separator + 3)
+
     def test_format_stop_result_sentences(self) -> None:
         self.assertEqual(
             format_stop_result(StopResult("k", "SIGTERM", (10, 11, 12, 13), (), ())),
@@ -1126,9 +1167,10 @@ class NotifySendTest(unittest.TestCase):
                 "--action=hide=Hide...",
             ],
         )
-        self.assertEqual(argv[7], "org.kde.yakuake: 768 MB in 2 processes")
-        self.assertIn("2 idle copies of bun start.mjs, running for at least 6 h", argv[8])
-        self.assertIn("10, 11", argv[8])
+        self.assertEqual(argv[7], "--")
+        self.assertEqual(argv[8], "org.kde.yakuake: 768 MB in 2 processes")
+        self.assertIn("2 idle copies of bun start.mjs, running for at least 6 h", argv[9])
+        self.assertIn("10, 11", argv[9])
 
     def test_ask_uses_shared_deadline_and_kills_timed_out_process(self) -> None:
         f1 = self._finding("k1", (10, 11))
@@ -1310,6 +1352,7 @@ class NotifySendTest(unittest.TestCase):
                 "notify-send",
                 "--app-name=ramCleaner",
                 "--urgency=normal",
+                "--",
                 "Stopped yakuake",
                 "method=SIGTERM  stopped=10",
             ],

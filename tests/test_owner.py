@@ -54,6 +54,16 @@ class OwnerTest(unittest.TestCase):
             Owner(app=None, unit="session-2.scope", tab=None),
         )
 
+    def test_label_escapes_control_characters_from_cgroup_name(self) -> None:
+        raw = "\x1b]0;pwned\x07"
+        cgroup = f"/user.slice/user-1000.slice/{raw}"
+        owner, owner_cg = resolve_owner(cgroup)
+        self.assertEqual(owner_cg, cgroup)
+        self.assertEqual(owner.unit, raw)
+        self.assertEqual(owner.label, r"\x1b]0;pwned\x07")
+        self.assertNotIn("\x1b", owner.label)
+        self.assertNotIn("\x07", owner.label)
+
     def test_held_by_picks_heavy_subtree_root_and_sorts_by_cgroup_memory(self) -> None:
         yakuake_cg = (
             "/user.slice/user-1000.slice/user@1000.service/app.slice/"

@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import fcntl
 import math
-import pwd
 import sys
 import time
 from collections.abc import Sequence
@@ -17,7 +16,7 @@ from ramcleaner.config import Config, ConfigError, load_config
 from ramcleaner.detect import Finding, detect, format_size, same_boot_history
 from ramcleaner.history import default_history_path, load_history
 from ramcleaner.notify import NotifySend
-from ramcleaner.owner import OwnerUsage, group_by_owner, resolve_owner
+from ramcleaner.owner import OwnerUsage, group_by_owner
 from ramcleaner.procscan import (
     Proc,
     clock_ticks,
@@ -29,6 +28,7 @@ from ramcleaner.watch import (
     format_finding,
     format_stop_result,
     load_ignored,
+    other_user_groups,
     run_watch,
     save_ignored,
 )
@@ -143,31 +143,6 @@ def _format_row(usage: OwnerUsage) -> str:
     return row
 
 
-def _user_name(uid: int) -> str:
-    try:
-        return pwd.getpwuid(uid).pw_name
-    except KeyError:
-        return str(uid)
-
-
-def _other_user_lines(procs: dict[int, Proc], min_mb: int) -> list[str]:
-    totals: dict[tuple[int, str], int] = {}
-    labels: dict[tuple[int, str], str] = {}
-    for proc in procs.values():
-        owner, owner_cg = resolve_owner(proc.cgroup)
-        key = (proc.uid, owner_cg)
-        totals[key] = totals.get(key, 0) + proc.rss_kb + proc.swap_kb
-        labels[key] = owner.label
-    threshold_kb = min_mb * 1024
-    rows: list[tuple[int, str, str]] = []
-    for (uid, owner_cg), total_kb in totals.items():
-        if total_kb < threshold_kb:
-            continue
-        rows.append((total_kb, _user_name(uid), labels[(uid, owner_cg)]))
-    rows.sort(key=lambda row: (-row[0], row[1], row[2]))
-    return [f"{name}  {label}  {format_size(total_kb)}" for total_kb, name, label in rows]
-
-
 def _scan_and_detect(
     args: argparse.Namespace,
     config: Config,
@@ -267,11 +242,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("RAM = anonymous memory, page cache excluded")
             for usage in usages[: max(args.top, 0)]:
                 print(_format_row(usage))
-            other_lines = _other_user_lines(others, config.other_users_min_mb)
-            if other_lines:
+            other_groups = other_user_groups(others, config.other_users_min_mb)
+            if other_groups:
                 print("Other users (information only):")
-                for line in other_lines:
-                    print(line)
+                for group in other_groups:
+                    print(f"{group.names}  {group.label}  {format_size(group.total_kb)}")
             print("Findings:" if findings else "Findings: none")
             for finding in findings:
                 print(format_finding(finding))
