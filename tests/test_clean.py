@@ -281,7 +281,7 @@ class CleanTest(unittest.TestCase):
         history_path.parent.mkdir(parents=True, exist_ok=True)
         now = time.time()
         entries = [
-            {"time": now - idx * 60, "procs": {}, "zombies": []}
+            {"time": now - idx * 60, "procs": {}, "zombies": [], "boot_id": "boot-fixture"}
             for idx in range(4)
         ]
         history_path.write_text(json.dumps(entries), encoding="utf-8")

@@ -12,7 +12,7 @@ from pathlib import Path
 
 from ramcleaner.actions import stop_finding
 from ramcleaner.config import Config, ConfigError, load_config
-from ramcleaner.detect import Finding, detect
+from ramcleaner.detect import Finding, detect, same_boot_history
 from ramcleaner.history import default_history_path, load_history
 from ramcleaner.notify import NotifySend
 from ramcleaner.owner import OwnerUsage, group_by_owner
@@ -141,6 +141,7 @@ def _scan_and_detect(
     first = scan_processes(proc_root=args.proc_root)
     time.sleep(args.interval)
     procs = scan_processes(proc_root=args.proc_root)
+    boot_id = read_boot_id(args.proc_root)
     findings = detect(
         first,
         procs,
@@ -148,9 +149,9 @@ def _scan_and_detect(
         read_uptime(args.proc_root),
         clock_ticks(),
         history,
-        boot_id=read_boot_id(args.proc_root),
+        boot_id=boot_id,
     )
-    return procs, findings, history
+    return procs, findings, same_boot_history(history, boot_id)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

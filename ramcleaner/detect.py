@@ -46,6 +46,13 @@ def _is_browser_child(proc: Proc) -> bool:
     return any(arg.startswith("--type=") or arg == "-contentproc" for arg in proc.cmdline[1:])
 
 
+def same_boot_history(history: list[dict], boot_id: str | None) -> list[dict]:
+    # Entries from another boot, or recorded before boot_id existed, must not supply samples.
+    if boot_id is None:
+        return history
+    return [entry for entry in history if entry.get("boot_id") == boot_id]
+
+
 def detect(
     first: dict[int, Proc],
     second: dict[int, Proc],
@@ -94,11 +101,7 @@ def detect(
                 procs=ordered,
             ))
 
-    # Entries from another boot, or recorded before boot_id existed, must not supply samples.
-    if boot_id is None:
-        usable = history
-    else:
-        usable = [entry for entry in history if entry.get("boot_id") == boot_id]
+    usable = same_boot_history(history, boot_id)
     previous_zombies = set(usable[-1]["zombies"]) if usable else set()
     zombies: dict[int, list[int]] = {}
     for proc in eligible.values():

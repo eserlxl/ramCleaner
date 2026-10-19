@@ -377,29 +377,38 @@ class ReportTest(unittest.TestCase):
         )
 
         now = time.time()
-        entries = [
-            {"time": now - idx * 60, "procs": {}, "zombies": []}
-            for idx in range(4)
-        ]
         self.history.parent.mkdir(parents=True, exist_ok=True)
-        self.history.write_text(json.dumps(entries), encoding="utf-8")
-
-        stdout = io.StringIO()
-        stderr = io.StringIO()
-        with redirect_stdout(stdout), redirect_stderr(stderr):
-            rc = main(
-                [
-                    "report",
-                    "--proc-root",
-                    str(proc_root),
-                    "--cgroup-root",
-                    str(cgroup_root),
-                    "--interval",
-                    "0",
+        # Scans from another boot cannot feed detection, so they must not hide the note.
+        for boot_id, expected in (
+            ("other-boot", (
+                "Note: 0 of 4 watch scans in the last 24 h; growth checks need 4 "
+                "and zombie checks need 1, recorded by the ramcleaner-watch timer\n"
+            )),
+            ("boot-fixture", ""),
+        ):
+            with self.subTest(boot_id=boot_id):
+                entries = [
+                    {"time": now - idx * 60, "procs": {}, "zombies": [], "boot_id": boot_id}
+                    for idx in range(4)
                 ]
-            )
-        self.assertEqual(rc, 0)
-        self.assertEqual(stderr.getvalue(), "")
+                self.history.write_text(json.dumps(entries), encoding="utf-8")
+
+                stdout = io.StringIO()
+                stderr = io.StringIO()
+                with redirect_stdout(stdout), redirect_stderr(stderr):
+                    rc = main(
+                        [
+                            "report",
+                            "--proc-root",
+                            str(proc_root),
+                            "--cgroup-root",
+                            str(cgroup_root),
+                            "--interval",
+                            "0",
+                        ]
+                    )
+                self.assertEqual(rc, 0)
+                self.assertEqual(stderr.getvalue(), expected)
 
 
 if __name__ == "__main__":
