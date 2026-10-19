@@ -100,12 +100,14 @@ class NotifySend:
 
         for finding in findings:
             summary, body = _format_notification(finding)
+            # Other-user warnings are information only and must not offer Stop.
+            actions = ["--action=later=Later", "--action=hide=Hide..."]
+            if finding.rule != "other-user":
+                actions.insert(0, "--action=stop=Stop")
             argv = [
                 *_BASE_ARGV,
                 f"--expire-time={expire_ms}",
-                "--action=stop=Stop",
-                "--action=later=Later",
-                "--action=hide=Hide...",
+                *actions,
                 summary,
                 body,
             ]

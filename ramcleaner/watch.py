@@ -4,6 +4,7 @@ from __future__ import annotations
 import fcntl
 import json
 import math
+import pwd
 import sys
 import time
 from collections.abc import Callable
@@ -14,7 +15,14 @@ from ramcleaner.actions import StopResult, stop_finding
 from ramcleaner.config import Config
 from ramcleaner.detect import Finding, detect, format_size
 from ramcleaner.history import append_scan, load_history, write_json_atomic
-from ramcleaner.procscan import clock_ticks, read_boot_id, read_uptime, scan_processes
+from ramcleaner.owner import resolve_owner
+from ramcleaner.procscan import (
+    Proc,
+    clock_ticks,
+    read_boot_id,
+    read_uptime,
+    scan_processes,
+)
 
 
 def format_finding(finding: Finding) -> str:
@@ -98,6 +106,48 @@ def save_ignored(
 _HIDE_HOURS = {"1 hour": 1, "6 hours": 6, "24 hours": 24}
 
 
+def _user_name(uid: int) -> str:
+    try:
+        return pwd.getpwuid(uid).pw_name
+    except KeyError:
+        return str(uid)
+
+
+def _other_user_warnings(procs: dict[int, Proc], min_mb: int) -> list[Finding]:
+    grouped: dict[str, list[Proc]] = {}
+    labels: dict[str, str] = {}
+    for proc in procs.values():
+        owner, owner_cg = resolve_owner(proc.cgroup)
+        grouped.setdefault(owner_cg, []).append(proc)
+        labels[owner_cg] = owner.label
+    threshold_kb = min_mb * 1024
+    warnings: list[Finding] = []
+    for owner_cg, members in grouped.items():
+        rss_kb = sum(proc.rss_kb for proc in members)
+        swap_kb = sum(proc.swap_kb for proc in members)
+        if rss_kb + swap_kb < threshold_kb:
+            continue
+        uids = sorted({proc.uid for proc in members})
+        names = ", ".join(_user_name(uid) for uid in uids)
+        ordered = tuple(sorted(members, key=lambda proc: proc.pid))
+        warnings.append(
+            Finding(
+                key=f"other-user:{owner_cg}",
+                rule="other-user",
+                owner_label=labels[owner_cg],
+                pids=tuple(proc.pid for proc in ordered),
+                rss_kb=rss_kb,
+                swap_kb=swap_kb,
+                reason=f"held by {names}; information only, not stopped",
+                procs=ordered,
+            )
+        )
+    warnings.sort(
+        key=lambda finding: (-(finding.rss_kb + finding.swap_kb), finding.key)
+    )
+    return warnings
+
+
 def run_watch(
     args_like: Any,
     config: Config,
@@ -121,7 +171,14 @@ def run_watch(
         history = load_history(history_path)
         first = scan_processes(proc_root=args_like.proc_root)
         time.sleep(args_like.interval)
-        procs = scan_processes(proc_root=args_like.proc_root)
+        if config.other_users_notify:
+            procs, others = scan_processes(
+                proc_root=args_like.proc_root,
+                all_users=True,
+            )
+        else:
+            procs = scan_processes(proc_root=args_like.proc_root)
+            others = {}
         stamp = float(now())
         boot_id = read_boot_id(args_like.proc_root)
 
@@ -160,22 +217,31 @@ def run_watch(
             for finding in findings
             if not _active(ignored.get(finding.key, 0.0), stamp, boot_id)
         ]
+        warnings = [
+            warning
+            for warning in _other_user_warnings(others, config.other_users_min_mb)
+            if not _active(ignored.get(warning.key, 0.0), stamp, boot_id)
+        ]
+        pending = [*unsuppressed, *warnings]
 
-        if not unsuppressed:
+        if not pending:
             if has_expired:
                 save_ignored(ignored_path, ignored, stamp, boot_id)
             return 0
 
-        for finding in unsuppressed:
+        for finding in pending:
             print(format_finding(finding))
 
-        answers = notifier.ask(unsuppressed, config.ask_timeout_minutes * 60)
+        answers = notifier.ask(pending, config.ask_timeout_minutes * 60)
         exit_code = 0
         suppressed_any = False
 
-        for finding in unsuppressed:
+        for finding in pending:
             answer = answers.get(finding.key, "")
             if answer == "stop":
+                # Information warnings have no Stop action and must not be stopped or hidden.
+                if finding.rule == "other-user":
+                    continue
                 result = stopper(finding, config, proc_root=args_like.proc_root)
                 summary = (
                     f"{finding.owner_label}: stopped {len(result.stopped)} processes"

@@ -26,7 +26,8 @@ _INT_MINIMUMS: dict[str, int] = {
     "other_users_min_mb": 0,
 }
 _INT_KEYS = frozenset(_INT_MINIMUMS)
-_ALL_KEYS = _INT_KEYS | {"protected", "stop_rules"}
+_BOOL_KEYS = frozenset({"other_users_notify"})
+_ALL_KEYS = _INT_KEYS | _BOOL_KEYS | {"protected", "stop_rules"}
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ class Config:
     ignore_for_hours: int = 24
     ask_timeout_minutes: int = 10
     other_users_min_mb: int = 512
+    other_users_notify: bool = True
     protected: tuple[str, ...] = ()
     stop_rules: tuple[tuple[str, str], ...] = ()
 
@@ -118,6 +120,10 @@ def load_config(path: str | Path | None = None) -> Config:
             min_val = _INT_MINIMUMS[key]
             if val < min_val:
                 raise ConfigError(f"Expected integer >= {min_val} for key '{key}'")
+            kwargs[key] = val
+        elif key in _BOOL_KEYS:
+            if not isinstance(val, bool):
+                raise ConfigError(f"Expected boolean for key '{key}'")
             kwargs[key] = val
         elif key == "protected":
             if not isinstance(val, list) or not all(isinstance(x, str) for x in val):

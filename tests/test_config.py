@@ -22,6 +22,7 @@ class ConfigTest(unittest.TestCase):
             self.assertEqual(cfg.ignore_for_hours, 24)
             self.assertEqual(cfg.ask_timeout_minutes, 10)
             self.assertEqual(cfg.other_users_min_mb, 512)
+            self.assertIs(cfg.other_users_notify, True)
             self.assertEqual(cfg.protected, ())
             self.assertEqual(cfg.stop_rules, ())
 
@@ -101,6 +102,20 @@ class ConfigTest(unittest.TestCase):
                 with self.assertRaises(ConfigError) as ctx:
                     load_config(cfg_path)
                 self.assertIn("ask_timeout_minutes", str(ctx.exception))
+
+    def test_other_users_notify_accepts_bool_and_rejects_int(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_path = Path(tmp) / "config.toml"
+            cfg_path.write_text("other_users_notify = true\n", encoding="utf-8")
+            self.assertIs(load_config(cfg_path).other_users_notify, True)
+
+            cfg_path.write_text("other_users_notify = false\n", encoding="utf-8")
+            self.assertIs(load_config(cfg_path).other_users_notify, False)
+
+            cfg_path.write_text("other_users_notify = 1\n", encoding="utf-8")
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(cfg_path)
+            self.assertIn("other_users_notify", str(ctx.exception))
 
     def test_valid_stop_rules_shapes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

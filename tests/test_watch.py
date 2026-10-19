@@ -185,6 +185,43 @@ class WatchTest(unittest.TestCase):
             cgroup_root=self.cgroup_root,
         )
 
+    def _other_user_args(self) -> tuple[argparse.Namespace, str]:
+        service_uid = 0 if os.getuid() != 0 else 65534
+        journald = "/system.slice/systemd-journald.service"
+        proc_root, cgroup_root = build_tree(
+            self.root / "other-users",
+            [
+                {
+                    "pid": 80,
+                    "ppid": 1,
+                    "comm": "systemd-journald",
+                    "uid": service_uid,
+                    "rss_kb": 512 * 1024,
+                    "swap_kb": 0,
+                    "start_ticks": 100,
+                    "cgroup": journald,
+                },
+                {
+                    "pid": 81,
+                    "ppid": 1,
+                    "comm": "tiny",
+                    "uid": service_uid,
+                    "rss_kb": 100 * 1024,
+                    "swap_kb": 0,
+                    "start_ticks": 100,
+                    "cgroup": "/system.slice/tiny.service",
+                },
+            ],
+        )
+        args = argparse.Namespace(
+            interval=0.0,
+            history_file=self.history_file,
+            proc_root=proc_root,
+            cgroup_root=cgroup_root,
+        )
+        _, owner_cg = resolve_owner(journald)
+        return args, f"other-user:{owner_cg}"
+
     def _run_hide(self, config: Config, stamp: float, runner) -> tuple[int, str, str]:
         def fake_popen(argv, *, stdout=None, text=None):
             return _FakePopen(argv, stdout_text="hide\n")
@@ -474,6 +511,110 @@ class WatchTest(unittest.TestCase):
         self.assertEqual(load_ignored(self.ignored_file), {})
         self.assertIn("later, will ask again", stdout1.getvalue())
         self.assertIn("later, will ask again", stdout2.getvalue())
+
+    def test_other_user_warning_is_sent_without_stop_action(self) -> None:
+        args, _key = self._other_user_args()
+        created: list[_FakePopen] = []
+        stopper = _FakeStopper()
+
+        def fake_popen(argv, *, stdout=None, text=None):
+            proc = _FakePopen(argv, stdout_text="later\n")
+            created.append(proc)
+            return proc
+
+        stdout = io.StringIO()
+        with (
+            patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen),
+            redirect_stdout(stdout),
+        ):
+            rc = run_watch(
+                args,
+                Config(),
+                notifier=NotifySend(),
+                stopper=stopper,
+                now=lambda: 1000.0,
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(created), 1)
+        actions = [arg for arg in created[0].argv if arg.startswith("--action=")]
+        self.assertEqual(
+            actions,
+            ["--action=later=Later", "--action=hide=Hide..."],
+        )
+        self.assertNotIn("--action=stop=Stop", created[0].argv)
+        self.assertIn("systemd-journald.service", created[0].argv[-2])
+        self.assertIn("information only, not stopped", created[0].argv[-1])
+        self.assertNotIn("tiny", " ".join(created[0].argv))
+        self.assertIn("other-user", stdout.getvalue())
+        self.assertIn("systemd-journald.service", stdout.getvalue())
+        self.assertIn("later, will ask again", stdout.getvalue())
+        self.assertNotIn("tiny", stdout.getvalue())
+        self.assertEqual(stopper.calls, [])
+        self.assertFalse(self.ignored_file.exists())
+
+    def test_other_user_warning_is_never_stopped_even_on_a_stop_answer(self) -> None:
+        args, key = self._other_user_args()
+        notifier = _FakeNotifier("stop")
+        stopper = _FakeStopper()
+        with redirect_stdout(io.StringIO()):
+            rc = run_watch(args, Config(), notifier=notifier, stopper=stopper, now=lambda: 1000.0)
+        self.assertEqual(rc, 0)
+        self.assertEqual([finding.key for finding in notifier.asked[0]], [key])
+        self.assertEqual(stopper.calls, [])
+        self.assertEqual(notifier.informed, [])
+        self.assertFalse(self.ignored_file.exists())
+
+    def test_other_users_notify_false_sends_no_warning(self) -> None:
+        args, key = self._other_user_args()
+        notifier = _FakeNotifier("later")
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            rc = run_watch(
+                args,
+                Config(other_users_notify=False),
+                notifier=notifier,
+                stopper=_FakeStopper(),
+                now=lambda: 1000.0,
+            )
+        self.assertEqual(rc, 0)
+        self.assertEqual(notifier.asked, [])
+        self.assertNotIn(key, stdout.getvalue())
+        self.assertNotIn("other-user", stdout.getvalue())
+
+    def test_hidden_other_user_warning_stays_hidden(self) -> None:
+        args, key = self._other_user_args()
+        stamp = 1000.0
+        notifier = _FakeNotifier("6 hours")
+        stopper = _FakeStopper()
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            rc = run_watch(
+                args,
+                Config(),
+                notifier=notifier,
+                stopper=stopper,
+                now=lambda: stamp,
+            )
+        self.assertEqual(rc, 0)
+        self.assertEqual([finding.key for finding in notifier.asked[0]], [key])
+        self.assertEqual(load_ignored(self.ignored_file), {key: stamp + 6 * 3600})
+        self.assertNotIn("will ask again", stdout.getvalue())
+        self.assertEqual(stopper.calls, [])
+
+        stdout2 = io.StringIO()
+        with redirect_stdout(stdout2):
+            rc2 = run_watch(
+                args,
+                Config(),
+                notifier=notifier,
+                stopper=stopper,
+                now=lambda: stamp + 10,
+            )
+        self.assertEqual(rc2, 0)
+        self.assertEqual(len(notifier.asked), 1)
+        self.assertEqual(stdout2.getvalue(), "")
+        self.assertEqual(load_ignored(self.ignored_file), {key: stamp + 6 * 3600})
 
     def test_hide_menu_records_choice_or_leaves_finding_open(self) -> None:
         config = Config(ignore_for_hours=2)
