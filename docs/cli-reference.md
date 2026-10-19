@@ -1,0 +1,113 @@
+# CLI Reference
+
+## Synopsis
+
+```text
+usage: ramcleaner [-h] [--proc-root PROC_ROOT] [--cgroup-root CGROUP_ROOT]
+                  {report,clean,watch} ...
+
+Report memory usage attributed to owning applications and units.
+
+positional arguments:
+  {report,clean,watch}
+    report              Print memory usage grouped by owning application or
+                        unit.
+    clean               Interactively approve and stop reported findings.
+    watch               Scan once, record history, and notify about new
+                        findings.
+
+options:
+  -h, --help            show this help message and exit
+  --proc-root PROC_ROOT
+                        Path to /proc root (test aid; default: /proc).
+  --cgroup-root CGROUP_ROOT
+                        Path to cgroup v2 root (test aid; default:
+                        /sys/fs/cgroup).
+```
+
+`--proc-root` and `--cgroup-root` are also accepted after the subcommand name for test fixtures.
+
+## Subcommands
+
+### `ramcleaner report`
+
+```text
+usage: ramcleaner report [-h] [--interval INTERVAL]
+                         [--history-file HISTORY_FILE] [--top TOP]
+
+options:
+  -h, --help            show this help message and exit
+  --interval INTERVAL   Seconds between CPU samples (default: 2.0).
+  --history-file HISTORY_FILE
+                        History file to read (default: XDG state directory).
+  --top TOP             Maximum number of owners to display (default: 15).
+```
+
+Takes two process samples `--interval` seconds apart, prints `RAM = anonymous memory, page cache excluded`, prints up to `--top` owner rows sorted by total memory (`RAM + swap`) descending, and then prints `Findings:` followed by each finding or `Findings: none`.
+
+`report` reads `--history-file` if it exists (for `zombie` and `growth` detection) and never creates or modifies state files.
+
+### `ramcleaner clean`
+
+```text
+usage: ramcleaner clean [-h] [--interval INTERVAL]
+                        [--history-file HISTORY_FILE] [--force]
+
+options:
+  -h, --help            show this help message and exit
+  --interval INTERVAL   Seconds between CPU samples (default: 2.0).
+  --history-file HISTORY_FILE
+                        History file to read (default: XDG state directory).
+  --force               Send SIGKILL to processes that survive SIGTERM.
+```
+
+Requires an interactive terminal (`sys.stdin.isatty()`). Takes two samples `--interval` seconds apart and prints `Findings: none` when nothing is detected.
+
+For each finding, `clean` prints the finding line and prompts `Stop it? [y/N] `. Only `y` or `yes` (case-insensitive) approves stopping; any other input or `EOF` skips the finding. After stopping an approved finding, `clean` prints:
+
+```text
+method=<method>  stopped=<pids>  still_alive=<pids>  skipped=<pid (reason), ...>
+```
+
+`clean` reads `--history-file` without modifying it.
+
+### `ramcleaner watch`
+
+```text
+usage: ramcleaner watch [-h] [--interval INTERVAL]
+                        [--history-file HISTORY_FILE]
+
+options:
+  -h, --help            show this help message and exit
+  --interval INTERVAL   Seconds between CPU samples (default: 2.0).
+  --history-file HISTORY_FILE
+                        History file to read (default: XDG state directory).
+```
+
+Runs a single scan pass intended for `ramcleaner-watch.service`:
+
+1. Opens `watch.lock` in the parent directory of `--history-file` and takes a non-blocking exclusive lock (`fcntl.flock` with `LOCK_EX | LOCK_NB`). If another `watch` process holds the lock, prints `another watch is running` to `stderr` and exits `0`.
+2. Loads `history.json`, takes two process samples `--interval` seconds apart, runs detection, and atomically appends the current scan to `history.json` (pruning entries older than `history_hours`).
+3. Loads `ignored.json` from the same state directory and filters out findings whose suppression timestamp is in the future (`until > now`).
+4. Prints each unsuppressed finding to `stdout` and starts `notify-send --app-name=ramCleaner --urgency=normal --action=stop=Stop --action=ignore=Ignore` concurrently for all unsuppressed findings, waiting for the user's responses.
+5. For each finding where the user clicked `Stop`, stops the finding (without `--force`) and sends a follow-up informational notification summarizing the result. For every other answer (`Ignore`, notification closed, or `notify-send` unavailable), records `now + ignore_for_hours * 3600` in `ignored.json`.
+
+## State files
+
+By default, state files live in `$XDG_STATE_HOME/ramcleaner/` when `XDG_STATE_HOME` is set and non-empty, or `~/.local/state/ramcleaner/` otherwise. Passing `--history-file PATH` places `ignored.json` and `watch.lock` in `PATH`'s parent directory.
+
+| File | Written by | Purpose |
+| --- | --- | --- |
+| `history.json` | `ramcleaner watch` | JSON array of scan records `{"time": <float>, "procs": {"<pid>:<start_ticks>": <rss_kb + swap_kb>}, "zombies": ["<pid>:<start_ticks>"]}`. Retained for `history_hours` (default `24` h). Read by `report`, `clean`, and `watch`. |
+| `ignored.json` | `ramcleaner watch` | JSON object `{"<finding.key>": <expiry_timestamp>}` tracking findings suppressed for `ignore_for_hours` (default `24` h). Expired entries (`until <= now`) are pruned when saved. |
+| `watch.lock` | `ramcleaner watch` | Advisory `flock` lock file preventing overlapping `ramcleaner watch` runs. |
+
+If `history.json` or `ignored.json` is malformed or unreadable, ramCleaner prints a `Warning:` line to `stderr` and treats the file as empty.
+
+## Exit statuses
+
+| Exit status | Meaning |
+| --- | --- |
+| `0` | Success: `report` completed; `clean` or `watch` had no findings, no finding was approved, another `watch` held `watch.lock`, or every approved stop left no surviving processes (`still_alive` is empty). |
+| `1` | Partial stop: at least one approved finding in `clean` or `watch` still had surviving target processes (`still_alive` is non-empty) after waiting for exit. |
+| `2` | Usage or configuration error: invalid CLI arguments (including negative or non-finite `--interval`), invalid or unreadable `config.toml`, or `ramcleaner clean` run when `stdin` is not a TTY. |

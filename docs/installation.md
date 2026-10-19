@@ -1,0 +1,93 @@
+# Installation
+
+## Requirements
+
+- Linux with `/proc` and cgroup v2 mounted at `/sys/fs/cgroup`.
+- Python 3.11 or newer. Only the Python standard library is used.
+- `notify-send` from `libnotify` (`libnotify-bin` on Debian/Ubuntu, `libnotify` on Fedora/Arch) with `--action` support when running `ramcleaner watch`.
+- `systemd` user manager when scheduling periodic runs with `ramcleaner-watch.timer`.
+
+## Install with `make`
+
+Install into your home directory (no root privileges required):
+
+```sh
+make install PREFIX=~/.local
+```
+
+Ensure `~/.local/bin` is on your `PATH`.
+
+Install system-wide:
+
+```sh
+sudo make install PREFIX=/usr/local
+```
+
+### Make variables
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PREFIX` | `/usr/local` | Base installation prefix. |
+| `BINDIR` | `$(PREFIX)/bin` | Directory for the `ramcleaner` executable. |
+| `LIBDIR` | `$(PREFIX)/lib/ramcleaner` | Directory for the Python package (`ramcleaner/*.py`). Must resolve to `$(BINDIR)/../lib/ramcleaner` so the launcher finds the package relative to its own path. |
+| `USERUNITDIR` | `$(PREFIX)/share/systemd/user` when `PREFIX` is `~/.local`, else `$(PREFIX)/lib/systemd/user` | Directory for `ramcleaner-watch.service` and `ramcleaner-watch.timer`. |
+| `DESTDIR` | *(empty)* | Staging root prepended to every destination path during packaging. |
+
+### Make targets
+
+| Target | Action |
+| --- | --- |
+| `install` | Copies `ramcleaner/*.py` to `$(DESTDIR)$(LIBDIR)/ramcleaner/` (mode `644`), `bin/ramcleaner` to `$(DESTDIR)$(BINDIR)/ramcleaner` (mode `755`), and the two systemd user units to `$(DESTDIR)$(USERUNITDIR)/` (mode `644`) with `@BINDIR@` replaced by `$(BINDIR)`. |
+| `uninstall` | Removes the installed executable, package files, and systemd user units, then removes empty `LIBDIR` directories. |
+| `test` | Runs `python3 -B -m unittest discover -s tests`. |
+| `lint` | Runs `ruff check ramcleaner tests bin/ramcleaner`. |
+
+## Run from a checkout
+
+You can run ramCleaner directly from the repository without installing:
+
+```sh
+./bin/ramcleaner report
+```
+
+or:
+
+```sh
+python3 -m ramcleaner report
+```
+
+## Enable and disable the systemd user timer
+
+After installing with the default `USERUNITDIR`, systemd finds the units:
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now ramcleaner-watch.timer
+```
+
+`ramcleaner-watch.timer` runs `ramcleaner-watch.service` 10 minutes after boot (`OnBootSec=10min`) and then every 15 minutes (`OnUnitActiveSec=15min`); while a run still waits for a notification answer, the timer starts no second run. `ramcleaner-watch.service` uses `Type=oneshot` and `TimeoutStartSec=infinity` because `ramcleaner watch` waits for the user to click a notification action before exiting.
+
+Check the timer schedule and last service run:
+
+```sh
+systemctl --user status ramcleaner-watch.timer
+systemctl --user status ramcleaner-watch.service
+```
+
+Disable and stop the timer:
+
+```sh
+systemctl --user disable --now ramcleaner-watch.timer
+```
+
+## Uninstall
+
+If the user timer is enabled, disable it first, then run `make uninstall` with the same `PREFIX` used for installation:
+
+```sh
+systemctl --user disable --now ramcleaner-watch.timer
+make uninstall PREFIX=~/.local
+systemctl --user daemon-reload
+```
+
+`make uninstall` does not delete user configuration (`$XDG_CONFIG_HOME/ramcleaner/config.toml`) or state files (`$XDG_STATE_HOME/ramcleaner/`). Remove those directories manually if you no longer want them.

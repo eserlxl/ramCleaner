@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+_bin_dir = Path(__file__).resolve().parent
+_lib_dir = _bin_dir.parent / "lib" / "ramcleaner"
+sys.path.insert(0, str(_lib_dir if _lib_dir.is_dir() else _bin_dir.parent))
+
+from ramcleaner.cli import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())

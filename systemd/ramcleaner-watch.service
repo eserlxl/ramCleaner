@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Unit]
+Description=Find processes holding unused memory and ask before stopping them
+
+[Service]
+Type=oneshot
+ExecStart=@BINDIR@/ramcleaner watch
+# A run waits for the user's notification answer before finishing.
+TimeoutStartSec=infinity

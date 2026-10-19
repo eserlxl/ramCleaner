@@ -52,15 +52,15 @@ with an id, the processes involved, their RSS and swap, and a one-line reason.
 1. **Idle clones.** Group processes by owner cgroup and by a command key (the executable plus the
    first script argument, so every `bun .../start.mjs` shares one key). A group is a finding when
    it has at least `min_clones` members (default 4) that are idle (no CPU ticks between the two
-   samples), older than `min_age` (default 6 h), and whose RSS + swap totals at least
+   samples), older than `min_age_hours` (default 6 h), and whose RSS + swap totals at least
    `min_group_mb` (default 1024). Only the idle members are proposed for stopping. Chromium and
    Electron child processes (a `--type=` argument) are never clones: each idle renderer is an open
    tab or window.
 2. **Unreaped zombies.** A zombie whose parent is alive and that has been a zombie in two scans in
    a row; the fix is on the parent, so the finding names the parent.
 3. **Growth.** A process whose RSS + swap grew by at least `min_growth_mb` (default 512) over the
-   history window (default 24 h, at least 4 recorded scans plus the current sample) with no step
-   shrinking by more than 1 % of the previous size. History lives in
+   `history_hours` window (default 24 h, at least 4 recorded scans plus the current sample) with no
+   step shrinking by more than 1 % of the previous size. History lives in
    `$XDG_STATE_HOME/ramcleaner/history.json` (default `~/.local/state/ramcleaner/`), pruned to the
    window.
 
@@ -91,9 +91,14 @@ Stopping is per finding and only after approval.
 - `ramcleaner clean [--force]` — the findings, one `Stop it? [y/N] ` question each, then stops the
   approved ones. Refuses with exit 2 if stdin is not a tty; exits 0 when nothing is approved or
   every approved stop leaves no survivors, and 1 if any survivor remains.
-- `ramcleaner watch` — one scan for the systemd user timer; each new finding becomes a desktop
-  notification with "Stop" and "Ignore" actions (`notify-send --action`). "Ignore" suppresses
-  that finding's key for `ignore_for` (default 24 h).
+- `ramcleaner watch` — one scan for the systemd user timer (`ramcleaner-watch.timer` and
+  `ramcleaner-watch.service`, `Type=oneshot` with `TimeoutStartSec=infinity` while waiting for the
+  notification answer); guarded by `watch.lock`, records history, and turns each new finding into a
+  desktop notification with "Stop" and "Ignore" actions (`notify-send --action`). Non-"Stop"
+  outcomes suppress that finding's key in `ignored.json` for `ignore_for_hours` (default 24 h).
+
+`bin/ramcleaner` locates the package in `../lib/ramcleaner` when installed via `Makefile` or in the
+repository root when run from a checkout.
 
 Configuration: `$XDG_CONFIG_HOME/ramcleaner/config.toml`, read with `tomllib`. Every key has a
 default, so the file is optional.
