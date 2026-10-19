@@ -86,7 +86,9 @@ def stop_finding(
     *,
     proc_root: str | Path = "/proc",
     force: bool = False,
-    kill: Callable[[int, int], Any] = os.kill,
+    pidfd_open: Callable[[int], int] = os.pidfd_open,
+    send_signal: Callable[[int, int], Any] = signal.pidfd_send_signal,
+    close: Callable[[int], Any] = os.close,
     run: Callable[..., Any] = subprocess.run,
     sleep: Callable[[float], None] = time.sleep,
     monotonic: Callable[[], float] = time.monotonic,
@@ -95,96 +97,110 @@ def stop_finding(
     scanned_by_pid = {proc.pid: proc for proc in finding.procs}
     skipped: list[tuple[int, str]] = []
     targets: list[Proc] = []
+    pidfds: dict[int, int] = {}
 
-    for pid in finding.pids:
-        scanned = scanned_by_pid.get(pid)
-        current = _read_proc(root, pid)
-        if current is None:
-            skipped.append((pid, "gone"))
-            continue
-        # Without the scanned identity a reused pid cannot be told apart, so never signal it.
-        if scanned is None:
-            skipped.append((pid, "not in scan"))
-            continue
-        if (
-            current.start_ticks != scanned.start_ticks
-            or current.cmdline != scanned.cmdline
-        ):
-            skipped.append((pid, "pid reused"))
-            continue
-        if is_protected(current, config) or is_protected(scanned, config):
-            skipped.append((pid, "protected"))
-            continue
-        targets.append(current)
+    try:
+        for pid in finding.pids:
+            # Open the pidfd before reading /proc so the fd pins the process the check verifies.
+            try:
+                fd = pidfd_open(pid)
+            except ProcessLookupError:
+                skipped.append((pid, "gone"))
+                continue
+            except PermissionError:
+                skipped.append((pid, "not permitted"))
+                continue
+            except OSError:
+                skipped.append((pid, "pidfd unavailable"))
+                continue
+            pidfds[pid] = fd
 
-    if not targets:
+            scanned = scanned_by_pid.get(pid)
+            current = _read_proc(root, pid)
+            if current is None:
+                close(pidfds.pop(pid))
+                skipped.append((pid, "gone"))
+                continue
+            # Without the scanned identity a reused pid cannot be told apart, so never signal it.
+            if scanned is None:
+                close(pidfds.pop(pid))
+                skipped.append((pid, "not in scan"))
+                continue
+            if (
+                current.start_ticks != scanned.start_ticks
+                or current.cmdline != scanned.cmdline
+            ):
+                close(pidfds.pop(pid))
+                skipped.append((pid, "pid reused"))
+                continue
+            if is_protected(current, config) or is_protected(scanned, config):
+                close(pidfds.pop(pid))
+                skipped.append((pid, "protected"))
+                continue
+            targets.append(current)
+
+        if not targets:
+            return StopResult(
+                finding_key=finding.key,
+                method="SIGTERM",
+                stopped=(),
+                still_alive=(),
+                skipped=tuple(skipped),
+            )
+
+        matched_command = _match_stop_rule(targets, config)
+        if matched_command is not None:
+            method = f"rule: {matched_command}"
+            try:
+                run(shlex.split(matched_command), check=False, timeout=60)
+            except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                # A missing or hung stop command must not abort the remaining findings.
+                method = f"rule failed: {matched_command} ({exc})"
+            active = [(proc.pid, proc.start_ticks) for proc in targets]
+            survivors = _wait_for_exit(root, active, config.term_timeout, sleep, monotonic)
+        else:
+            method = "SIGTERM"
+            gone_on_kill: set[int] = set()
+            denied: set[int] = set()
+            for proc in targets:
+                try:
+                    send_signal(pidfds[proc.pid], signal.SIGTERM)
+                except ProcessLookupError:
+                    gone_on_kill.add(proc.pid)
+                except PermissionError:
+                    denied.add(proc.pid)
+                    skipped.append((proc.pid, "not permitted"))
+            targets = [proc for proc in targets if proc.pid not in denied]
+            active = [
+                (proc.pid, proc.start_ticks)
+                for proc in targets
+                if proc.pid not in gone_on_kill
+            ]
+            survivors = _wait_for_exit(root, active, config.term_timeout, sleep, monotonic)
+            if force and survivors:
+                method = "SIGTERM+SIGKILL"
+                still_active: list[tuple[int, int]] = []
+                for pid, start_ticks in survivors:
+                    current = _read_proc(root, pid)
+                    if current is None or current.state == "Z":
+                        continue
+                    try:
+                        send_signal(pidfds[pid], signal.SIGKILL)
+                    except ProcessLookupError:
+                        continue
+                    still_active.append((pid, start_ticks))
+                survivors = _wait_for_exit(root, still_active, 2.0, sleep, monotonic)
+
+        alive_set = {pid for pid, _ in survivors}
+        stopped = tuple(proc.pid for proc in targets if proc.pid not in alive_set)
+        still_alive = tuple(proc.pid for proc in targets if proc.pid in alive_set)
         return StopResult(
             finding_key=finding.key,
-            method="SIGTERM",
-            stopped=(),
-            still_alive=(),
+            method=method,
+            stopped=stopped,
+            still_alive=still_alive,
             skipped=tuple(skipped),
         )
-
-    matched_command = _match_stop_rule(targets, config)
-    if matched_command is not None:
-        method = f"rule: {matched_command}"
-        try:
-            run(shlex.split(matched_command), check=False, timeout=60)
-        except (OSError, ValueError, subprocess.SubprocessError) as exc:
-            # A missing or hung stop command must not abort the remaining findings.
-            method = f"rule failed: {matched_command} ({exc})"
-        active = [(proc.pid, proc.start_ticks) for proc in targets]
-        survivors = _wait_for_exit(root, active, config.term_timeout, sleep, monotonic)
-    else:
-        method = "SIGTERM"
-        gone_on_kill: set[int] = set()
-        denied: set[int] = set()
-        for proc in targets:
-            try:
-                kill(proc.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                gone_on_kill.add(proc.pid)
-            except PermissionError:
-                denied.add(proc.pid)
-                skipped.append((proc.pid, "not permitted"))
-        targets = [proc for proc in targets if proc.pid not in denied]
-        active = [
-            (proc.pid, proc.start_ticks)
-            for proc in targets
-            if proc.pid not in gone_on_kill
-        ]
-        survivors = _wait_for_exit(root, active, config.term_timeout, sleep, monotonic)
-        if force and survivors:
-            method = "SIGTERM+SIGKILL"
-            still_active: list[tuple[int, int]] = []
-            for pid, start_ticks in survivors:
-                current = _read_proc(root, pid)
-                if (
-                    current is None
-                    or current.state == "Z"
-                    or current.start_ticks != start_ticks
-                ):
-                    continue
-                scanned = scanned_by_pid.get(pid)
-                if scanned is not None and current.cmdline != scanned.cmdline:
-                    continue
-                if is_protected(current, config):
-                    continue
-                try:
-                    kill(pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    continue
-                still_active.append((pid, start_ticks))
-            survivors = _wait_for_exit(root, still_active, 2.0, sleep, monotonic)
-
-    alive_set = {pid for pid, _ in survivors}
-    stopped = tuple(proc.pid for proc in targets if proc.pid not in alive_set)
-    still_alive = tuple(proc.pid for proc in targets if proc.pid in alive_set)
-    return StopResult(
-        finding_key=finding.key,
-        method=method,
-        stopped=stopped,
-        still_alive=still_alive,
-        skipped=tuple(skipped),
-    )
+    finally:
+        for fd in pidfds.values():
+            close(fd)

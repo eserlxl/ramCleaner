@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Linux with `/proc` and cgroup v2 mounted at `/sys/fs/cgroup`.
+- Linux >= 5.3 (pidfd) with `/proc` and cgroup v2 mounted at `/sys/fs/cgroup`.
 - Python 3.11 or newer. Only the Python standard library is used.
 - `notify-send` from `libnotify` (`libnotify-bin` on Debian/Ubuntu, `libnotify` on Fedora/Arch) with `--action` support when running `ramcleaner watch`.
 - `systemd` user manager when scheduling periodic runs with `ramcleaner-watch.timer`.

@@ -80,9 +80,10 @@ Stopping is per finding and only after approval.
   `term_timeout` (default 10 s) until each pid has exited (its `/proc/PID` directory is gone, its
   `start_ticks` changed, or its state is `Z`) and report which pids are still alive. With an
   explicit `--force`, send SIGKILL to the survivors and poll up to 2 s more.
-- Before sending any signal, every pid is re-checked: same start time (`start_ticks`) and same
-  cmdline as in the scan, and not protected. A pid that vanished, was reused, or is protected is
-  skipped.
+- Before sending any signal, a pidfd is opened for each pid and its `/proc/PID` entry is
+  re-checked: same start time (`start_ticks`) and same cmdline as in the scan, and not protected.
+  Signals (`SIGTERM` and `--force` `SIGKILL`) are sent through that pidfd so a reused pid can never
+  be hit; a pid that vanished, was reused, or is protected has its pidfd closed and is skipped.
 
 ## Interfaces
 
