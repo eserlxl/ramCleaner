@@ -20,9 +20,10 @@ from ramcleaner.config import Config
 from ramcleaner.detect import Finding
 from ramcleaner.history import load_history
 from ramcleaner.notify import NotifySend
+from ramcleaner.owner import resolve_owner
 from ramcleaner.procscan import read_boot_id
 from ramcleaner.watch import load_ignored, run_watch
-from tests.fakeproc import build_tree
+from tests.fakeproc import build_tree, write_proc
 
 
 class _FakeNotifier:
@@ -75,18 +76,31 @@ class _FakePopen:
         returncode: int = 0,
         *,
         expire_on_first_communicate: bool = False,
+        expire_cleanup_communicate: bool = False,
+        fail_cleanup_wait: bool = False,
     ) -> None:
         self.argv = argv
         self._stdout_text = stdout_text
         self.returncode = returncode
         self._expire_on_first = expire_on_first_communicate
+        self._expire_cleanup = expire_cleanup_communicate
+        self._fail_cleanup_wait = fail_cleanup_wait
         self.communicated = False
         self.communicate_timeouts: list[float | None] = []
+        self.wait_timeouts: list[float | None] = []
         self.killed = False
         self.reaped = False
+        # inform() inspects stdout after a failed cleanup communicate.
+        self.stdout = None
 
     def kill(self) -> None:
         self.killed = True
+
+    def wait(self, timeout: float | None = None) -> int:
+        self.wait_timeouts.append(timeout)
+        if self._fail_cleanup_wait:
+            raise subprocess.TimeoutExpired(self.argv, timeout or 0.0)
+        return self.returncode
 
     def communicate(self, timeout: float | None = None) -> tuple[str, str]:
         self.communicated = True
@@ -94,9 +108,18 @@ class _FakePopen:
         if self._expire_on_first:
             self._expire_on_first = False
             raise subprocess.TimeoutExpired(self.argv, timeout or 0.0)
+        if self.killed and self._expire_cleanup:
+            raise subprocess.TimeoutExpired(self.argv, timeout or 0.0)
         if self.killed:
             self.reaped = True
         return self._stdout_text, ""
+
+
+def _assert_positive_timeouts(test: unittest.TestCase, timeouts: list[float | None]) -> None:
+    test.assertTrue(timeouts)
+    for timeout in timeouts:
+        test.assertIsInstance(timeout, (int, float))
+        test.assertGreater(timeout, 0)
 
 
 class WatchTest(unittest.TestCase):
@@ -495,6 +518,121 @@ class WatchTest(unittest.TestCase):
         self.assertEqual(load_ignored(self.ignored_file), {})
         self.assertFalse(self.history_file.exists())
 
+    def test_inform_failure_after_stop_keeps_later_finding_and_releases_lock(self) -> None:
+        second_cgroup = "/app.slice/app-org.kde.kate-1.scope/tab(7).scope"
+        for pid in range(40, 44):
+            write_proc(
+                self.proc_root,
+                {
+                    "pid": pid,
+                    "ppid": 20,
+                    "comm": "bun",
+                    "cmdline": ("bun", "/opt/context-mode/start.mjs"),
+                    "rss_kb": 256 * 1024,
+                    "swap_kb": 64 * 1024,
+                    "start_ticks": 100,
+                    "cpu_ticks": 10,
+                    "cgroup": second_cgroup,
+                },
+            )
+        _, owner_cgroup = resolve_owner(second_cgroup)
+        command = ("bun", "/opt/context-mode/start.mjs")
+        expected_key = f"idle-clones:{owner_cgroup}:{command}"
+        stamp = 5000.0
+        config = Config()
+        modes = ("timeout", "failed_cleanup", "oserror", "nonzero")
+
+        for mode in modes:
+            for still_alive, expected_rc in (((), 0), ((14,), 1)):
+                with self.subTest(mode=mode, still_alive=still_alive):
+                    self.ignored_file.unlink(missing_ok=True)
+                    self.history_file.unlink(missing_ok=True)
+                    created: list[_FakePopen] = []
+
+                    def fake_popen(argv, *, stdout=None, text=None, created=created, mode=mode):
+                        if "--action=stop=Stop" in argv:
+                            answered = any("--action=stop=Stop" in proc.argv for proc in created)
+                            answer = "ignore\n" if answered else "stop\n"
+                            proc = _FakePopen(argv, stdout_text=answer)
+                            created.append(proc)
+                            return proc
+                        if mode == "oserror":
+                            raise OSError("inform notify-send failed")
+                        if mode == "nonzero":
+                            proc = _FakePopen(argv, returncode=1)
+                        elif mode == "failed_cleanup":
+                            proc = _FakePopen(
+                                argv,
+                                expire_on_first_communicate=True,
+                                expire_cleanup_communicate=True,
+                                fail_cleanup_wait=True,
+                            )
+                        else:
+                            proc = _FakePopen(argv, expire_on_first_communicate=True)
+                        created.append(proc)
+                        return proc
+
+                    stopper = _FakeStopper(still_alive=still_alive)
+                    stderr = io.StringIO()
+                    with (
+                        patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen),
+                        redirect_stdout(io.StringIO()),
+                        redirect_stderr(stderr),
+                    ):
+                        rc = run_watch(
+                            self._args(),
+                            config,
+                            notifier=NotifySend(),
+                            stopper=stopper,
+                            now=lambda: stamp,
+                        )
+
+                    self.assertEqual(rc, expected_rc)
+                    self.assertEqual(len(stopper.calls), 1)
+                    self.assertEqual(stopper.calls[0][0].pids, (10, 11, 12, 13, 14))
+                    self.assertEqual(stopper.calls[0][2], self.proc_root)
+                    self.assertEqual(
+                        load_ignored(self.ignored_file),
+                        {expected_key: stamp + config.ignore_for_hours * 3600},
+                    )
+                    action_procs = [proc for proc in created if "--action=stop=Stop" in proc.argv]
+                    inform_procs = [proc for proc in created if "--action=stop=Stop" not in proc.argv]
+                    self.assertEqual(len(action_procs), 2)
+                    if mode == "oserror":
+                        self.assertEqual(inform_procs, [])
+                        self.assertEqual(len(stderr.getvalue().splitlines()), 1)
+                        self.assertIn("Warning:", stderr.getvalue())
+                    else:
+                        self.assertEqual(len(inform_procs), 1)
+                        proc = inform_procs[0]
+                        self.assertIn("stopped", proc.argv[-2])
+                        _assert_positive_timeouts(self, proc.communicate_timeouts)
+                        if mode == "timeout":
+                            self.assertEqual(len(proc.communicate_timeouts), 2)
+                            self.assertTrue(proc.killed)
+                            self.assertTrue(proc.reaped)
+                            self.assertEqual(proc.wait_timeouts, [])
+                            self.assertEqual(stderr.getvalue(), "")
+                        elif mode == "failed_cleanup":
+                            self.assertEqual(len(proc.communicate_timeouts), 2)
+                            self.assertTrue(proc.killed)
+                            self.assertFalse(proc.reaped)
+                            _assert_positive_timeouts(self, proc.wait_timeouts)
+                            self.assertEqual(len(stderr.getvalue().splitlines()), 1)
+                            self.assertIn("Warning:", stderr.getvalue())
+                        else:
+                            self.assertEqual(len(proc.communicate_timeouts), 1)
+                            self.assertFalse(proc.killed)
+                            self.assertFalse(proc.reaped)
+                            self.assertEqual(proc.wait_timeouts, [])
+                            self.assertEqual(len(stderr.getvalue().splitlines()), 1)
+                            self.assertIn("Warning:", stderr.getvalue())
+
+                    lock_path = self.state_dir / "watch.lock"
+                    with lock_path.open("a", encoding="utf-8") as held:
+                        fcntl.flock(held.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        self.assertFalse(held.closed)
+
 
 class NotifySendTest(unittest.TestCase):
     def _finding(self, key: str = "k1", pids: tuple[int, ...] = (10, 11)) -> Finding:
@@ -633,6 +771,111 @@ class NotifySendTest(unittest.TestCase):
                 "method=SIGTERM  stopped=10",
             ],
         )
+
+    def test_inform_timeout_kills_and_reaps_only_after_successful_cleanup(self) -> None:
+        created: list[_FakePopen] = []
+
+        def fake_popen(argv, *, stdout=None, text=None):
+            proc = _FakePopen(argv, expire_on_first_communicate=True)
+            created.append(proc)
+            return proc
+
+        stderr = io.StringIO()
+        with (
+            patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen),
+            redirect_stderr(stderr),
+        ):
+            result = NotifySend().inform("Stopped yakuake", "method=SIGTERM")
+
+        self.assertIsNone(result)
+        self.assertEqual(len(created), 1)
+        proc = created[0]
+        self.assertEqual(len(proc.communicate_timeouts), 2)
+        _assert_positive_timeouts(self, proc.communicate_timeouts)
+        self.assertTrue(proc.killed)
+        self.assertTrue(proc.reaped)
+        self.assertEqual(proc.wait_timeouts, [])
+        self.assertEqual(stderr.getvalue(), "")
+
+    def test_inform_cleanup_timeout_waits_with_positive_timeout(self) -> None:
+        for fail_wait, warning in ((False, False), (True, True)):
+            with self.subTest(fail_wait=fail_wait):
+                created: list[_FakePopen] = []
+
+                def fake_popen(argv, *, stdout=None, text=None, created=created,
+                               fail_wait=fail_wait):
+                    proc = _FakePopen(
+                        argv,
+                        expire_on_first_communicate=True,
+                        expire_cleanup_communicate=True,
+                        fail_cleanup_wait=fail_wait,
+                    )
+                    created.append(proc)
+                    return proc
+
+                stderr = io.StringIO()
+                with (
+                    patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen),
+                    redirect_stderr(stderr),
+                ):
+                    result = NotifySend().inform("Stopped yakuake", "method=SIGTERM")
+
+                self.assertIsNone(result)
+                self.assertEqual(len(created), 1)
+                proc = created[0]
+                self.assertEqual(len(proc.communicate_timeouts), 2)
+                _assert_positive_timeouts(self, proc.communicate_timeouts)
+                self.assertTrue(proc.killed)
+                self.assertFalse(proc.reaped)
+                self.assertEqual(len(proc.wait_timeouts), 1)
+                _assert_positive_timeouts(self, proc.wait_timeouts)
+                if warning:
+                    self.assertEqual(len(stderr.getvalue().splitlines()), 1)
+                    self.assertIn("Warning:", stderr.getvalue())
+                else:
+                    self.assertEqual(stderr.getvalue(), "")
+
+    def test_inform_spawn_error_warns_once_and_returns(self) -> None:
+        for exc_type in (OSError, FileNotFoundError):
+            with self.subTest(exc_type=exc_type.__name__):
+                stderr = io.StringIO()
+                with (
+                    patch(
+                        "ramcleaner.notify.subprocess.Popen",
+                        side_effect=exc_type("no notify-send"),
+                    ),
+                    redirect_stderr(stderr),
+                ):
+                    result = NotifySend().inform("Stopped yakuake", "method=SIGTERM")
+                self.assertIsNone(result)
+                self.assertEqual(len(stderr.getvalue().splitlines()), 1)
+                self.assertIn("Warning:", stderr.getvalue())
+
+    def test_inform_nonzero_exit_warns_once_and_returns(self) -> None:
+        created: list[_FakePopen] = []
+
+        def fake_popen(argv, *, stdout=None, text=None):
+            proc = _FakePopen(argv, returncode=1)
+            created.append(proc)
+            return proc
+
+        stderr = io.StringIO()
+        with (
+            patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen),
+            redirect_stderr(stderr),
+        ):
+            result = NotifySend().inform("Stopped yakuake", "method=SIGTERM")
+
+        self.assertIsNone(result)
+        self.assertEqual(len(created), 1)
+        proc = created[0]
+        self.assertEqual(len(proc.communicate_timeouts), 1)
+        _assert_positive_timeouts(self, proc.communicate_timeouts)
+        self.assertFalse(proc.killed)
+        self.assertFalse(proc.reaped)
+        self.assertEqual(proc.wait_timeouts, [])
+        self.assertEqual(len(stderr.getvalue().splitlines()), 1)
+        self.assertIn("Warning:", stderr.getvalue())
 
 
 if __name__ == "__main__":
