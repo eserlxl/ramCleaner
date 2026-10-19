@@ -70,6 +70,7 @@ systemctl --user enable --now ramcleaner-watch.timer
 | Path | Description |
 | --- | --- |
 | [docs/design.md](docs/design.md) | Architecture, `/proc` and cgroup v2 data sources, owner attribution, detection rules, and stopping logic. |
+| [docs/packaging.md](docs/packaging.md) | Arch `PKGBUILD` for the `ramcleaner` AUR package (not published yet), test build, and the release and publish steps. |
 | [Makefile](Makefile) | Build, install, uninstall, test, and lint targets. |
 | [tests/](tests/) | Unit and fixture tests (`tests/fakeproc.py` builds synthetic `/proc` and cgroup trees). |
 

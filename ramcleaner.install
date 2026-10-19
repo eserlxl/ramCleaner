@@ -1,0 +1,10 @@
+post_install() {
+	echo "ramcleaner: the watch timer is a per-user unit and is not enabled automatically."
+	echo "  Look first:  ramcleaner report"
+	echo "  Then enable: systemctl --user enable --now ramcleaner-watch.timer"
+}
+
+pre_remove() {
+	echo "ramcleaner: users who enabled the watch timer should run"
+	echo "  systemctl --user disable --now ramcleaner-watch.timer"
+}

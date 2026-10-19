@@ -1,0 +1,14 @@
+pkgbase = ramcleaner
+	pkgdesc = Find processes holding unused memory, attribute them to their owner, and stop them only after approval
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/eserlxl/ramCleaner
+	install = ramcleaner.install
+	arch = any
+	license = GPL-3.0-or-later
+	depends = python>=3.11
+	optdepends = libnotify: Stop/Ignore desktop notifications for ramcleaner watch
+	source = ramcleaner-0.1.0.tar.gz::https://github.com/eserlxl/ramCleaner/archive/refs/tags/v0.1.0.tar.gz
+	sha256sums = SKIP
+
+pkgname = ramcleaner

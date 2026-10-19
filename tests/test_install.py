@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import stat
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+
+import ramcleaner
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -140,6 +143,15 @@ class InstallTest(unittest.TestCase):
             )
             self.assertNotEqual(res.returncode, 0)
             self.assertIn("LIBDIR", res.stderr)
+
+
+class PackageVersionTest(unittest.TestCase):
+    def test_pkgbuild_and_srcinfo_match_package_version(self) -> None:
+        for name, pattern in (("PKGBUILD", r"^pkgver=(\S+)$"), (".SRCINFO", r"^\tpkgver = (\S+)$")):
+            with self.subTest(file=name):
+                text = (REPO_ROOT / name).read_text(encoding="utf-8")
+                found = re.findall(pattern, text, re.MULTILINE)
+                self.assertEqual(found, [ramcleaner.__version__])
 
 
 if __name__ == "__main__":

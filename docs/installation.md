@@ -42,6 +42,10 @@ sudo make install PREFIX=/usr/local
 | `test` | Runs `python3 -B -m unittest discover -s tests`. |
 | `lint` | Runs `ruff check --target-version py311 ramcleaner tests bin/ramcleaner`, which also rejects syntax newer than Python 3.11. |
 
+## Arch Linux package
+
+The repository ships a `PKGBUILD` for a `ramcleaner` package that installs into `/usr` (the user units go to `/usr/lib/systemd/user`). It is not on the AUR yet; [packaging.md](packaging.md) shows how to build it locally. The package does not enable the timer: each user enables it as shown below.
+
 ## Run from a checkout
 
 You can run ramCleaner directly from the repository without installing:
