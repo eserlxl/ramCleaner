@@ -286,6 +286,30 @@ class ReportTest(unittest.TestCase):
         for row in rows[1:]:
             self.assertNotIn("zswap", row)
 
+    def test_report_marks_rows_without_cgroup_memory(self) -> None:
+        readable_cg = "/user.slice/user-1000.slice/user@1000.service/app.slice/app-foo-1.scope"
+        unreadable_cg = "/user.slice/user-1000.slice/user@1000.service/app.slice/app-bar-2.scope"
+        proc_root, cgroup_root = build_tree(
+            self.root,
+            [
+                {"pid": 100, "ppid": 1, "comm": "foo", "rss_kb": 400000, "cgroup": readable_cg},
+                {"pid": 200, "ppid": 1, "comm": "bar", "rss_kb": 300000, "cgroup": unreadable_cg},
+            ],
+            cgroups={readable_cg: (500 * 1024**2, 0)},
+        )
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            rc = main([
+                "report", "--proc-root", str(proc_root), "--cgroup-root", str(cgroup_root),
+                "--interval", "0",
+            ])
+        self.assertEqual(rc, 0)
+        rows = stdout.getvalue().splitlines()[1:3]
+        self.assertTrue(rows[0].startswith("foo"))
+        self.assertNotIn("VmRSS", rows[0])
+        self.assertTrue(rows[1].startswith("bar"))
+        self.assertTrue(rows[1].endswith("  (VmRSS: cgroup memory unreadable)"))
+
     def test_report_history_note_when_scans_under_four(self) -> None:
         proc_root, cgroup_root = build_tree(self.root, [])
         stdout = io.StringIO()

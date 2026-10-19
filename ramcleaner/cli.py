@@ -121,6 +121,9 @@ def _format_row(usage: OwnerUsage) -> str:
     if usage.zswap_bytes > 0:
         zswap_mb = usage.zswap_bytes / (1024 * 1024)
         row += f"  {zswap_mb:7.1f} MB in zswap"
+    if usage.cgroup_bytes is None:
+        # The header promises anonymous memory; VmRSS also counts file-backed pages.
+        row += "  (VmRSS: cgroup memory unreadable)"
     return row
 
 
