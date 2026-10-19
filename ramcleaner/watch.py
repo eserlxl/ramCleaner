@@ -95,7 +95,6 @@ def run_watch(
             read_uptime(args_like.proc_root),
             clock_ticks(),
             history,
-            args_like.cgroup_root,
             now=stamp,
         )
 

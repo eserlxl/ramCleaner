@@ -111,7 +111,6 @@ def _scan_and_detect(
         read_uptime(args.proc_root),
         clock_ticks(),
         history,
-        args.cgroup_root,
     )
     return procs, findings
 

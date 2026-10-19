@@ -5,7 +5,6 @@ import os
 import time
 from dataclasses import dataclass
 from itertools import pairwise
-from pathlib import Path
 
 from ramcleaner.config import Config
 from ramcleaner.owner import resolve_owner
@@ -54,7 +53,6 @@ def detect(
     uptime_s: float,
     clk_tck: int,
     history: list[dict],
-    cgroup_root: str | Path,
     now: float | None = None,
 ) -> list[Finding]:
     eligible = {

@@ -17,7 +17,7 @@ class DetectTest(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.cgroup = "/app.slice/app-org.kde.yakuake-1.scope/tab(850422).scope"
-        proc_root, self.cgroup_root = build_tree(
+        proc_root, _ = build_tree(
             temporary.name,
             [
                 {"pid": pid, "ppid": 20, "comm": "bun",
@@ -42,7 +42,7 @@ class DetectTest(unittest.TestCase):
         return detect(
             self.procs if first is None else first,
             self.procs if second is None else second,
-            config or Config(), 100000, 100, history or [], self.cgroup_root,
+            config or Config(), 100000, 100, history or [],
         )
 
     def growth_history(self, sizes=(100, 200, 300, 400)):
