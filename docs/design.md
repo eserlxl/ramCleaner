@@ -24,7 +24,8 @@ Per process: pid, ppid, state (`/proc/PID/stat`), comm, cmdline, uid, `VmRSS`, `
 (`/proc/PID/status`), cumulative CPU ticks (utime + stime) and start time, and the cgroup path
 (`/proc/PID/cgroup`, the v2 `0::` line). Processes that vanish mid-scan are skipped, never an error.
 
-Per cgroup: `memory.current` and `memory.swap.current`.
+Per cgroup: the `anon` line of `memory.stat` and `memory.swap.current`. RAM means anonymous
+memory; reclaimable page cache is excluded.
 
 Only the invoking user's processes are considered.
 
@@ -44,14 +45,17 @@ process subtree inside that cgroup), so the report can say "charged to org.kde.y
 
 ## Detection rules
 
-A scan takes two samples a few seconds apart (CPU ticks need a delta). Every rule yields findings
+A scan takes two samples `--interval` seconds apart (default 2.0; CPU ticks need a delta).
+Every rule yields findings
 with an id, the processes involved, their RSS and swap, and a one-line reason.
 
 1. **Idle clones.** Group processes by owner cgroup and by a command key (the executable plus the
    first script argument, so every `bun .../start.mjs` shares one key). A group is a finding when
    it has at least `min_clones` members (default 4) that are idle (no CPU ticks between the two
    samples), older than `min_age` (default 6 h), and whose RSS + swap totals at least
-   `min_group_mb` (default 1024). Only the idle members are proposed for stopping.
+   `min_group_mb` (default 1024). Only the idle members are proposed for stopping. Chromium and
+   Electron child processes (a `--type=` argument) are never clones: each idle renderer is an open
+   tab or window.
 2. **Unreaped zombies.** A zombie whose parent is alive and that has been a zombie in two scans in
    a row; the fix is on the parent, so the finding names the parent.
 3. **Growth.** A process whose RSS + swap grew in every recorded scan over the history window
@@ -76,7 +80,8 @@ Stopping is per finding and only after approval.
 
 ## Interfaces
 
-- `ramcleaner report` — memory by owner, then the findings. Read-only.
+- `ramcleaner report` — memory by owner, then the findings. Reads history without writing it;
+  `--history-file` overrides the default state path.
 - `ramcleaner clean` — the findings, one `[y/N]` question each, then stops the approved ones.
 - `ramcleaner watch` — one scan for the systemd user timer; each new finding becomes a desktop
   notification with "Stop" and "Ignore" actions (`notify-send --action`). "Ignore" suppresses

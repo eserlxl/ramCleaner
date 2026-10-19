@@ -2,10 +2,15 @@
 from __future__ import annotations
 
 import argparse
+import math
+import time
 from collections.abc import Sequence
 
+from ramcleaner.config import ConfigError, load_config
+from ramcleaner.detect import detect
+from ramcleaner.history import default_history_path, load_history
 from ramcleaner.owner import OwnerUsage, group_by_owner
-from ramcleaner.procscan import scan_processes
+from ramcleaner.procscan import clock_ticks, read_uptime, scan_processes
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -28,6 +33,17 @@ def _build_parser() -> argparse.ArgumentParser:
     report_p = subparsers.add_parser(
         "report",
         help="Print memory usage grouped by owning application or unit.",
+    )
+    report_p.add_argument(
+        "--interval",
+        type=float,
+        default=2.0,
+        help="Seconds between CPU samples (default: 2.0).",
+    )
+    report_p.add_argument(
+        "--history-file",
+        default=default_history_path(),
+        help="History file to read (default: XDG state directory).",
     )
     report_p.add_argument(
         "--top",
@@ -60,10 +76,31 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "report":
+        if not math.isfinite(args.interval) or args.interval < 0:
+            parser.error("--interval must be finite and non-negative")
+        try:
+            config = load_config()
+        except (ConfigError, OSError) as exc:
+            parser.error(str(exc))
+        history = load_history(args.history_file)
+        first = scan_processes(proc_root=args.proc_root)
+        time.sleep(args.interval)
         procs = scan_processes(proc_root=args.proc_root)
+        findings = detect(
+            first, procs, config, read_uptime(args.proc_root), clock_ticks(),
+            history, args.cgroup_root,
+        )
         usages = group_by_owner(procs, cgroup_root=args.cgroup_root)
+        print("RAM = anonymous memory, page cache excluded")
         for usage in usages[: max(args.top, 0)]:
             print(_format_row(usage))
+        print("Findings:" if findings else "Findings: none")
+        for finding in findings:
+            print(
+                f"{finding.rule}  {finding.owner_label}  {len(finding.pids)} pids  "
+                f"{finding.rss_kb / 1024:.1f} MB RAM  {finding.swap_kb / 1024:.1f} MB swap  "
+                f"{finding.reason}"
+            )
         return 0
 
     return 0

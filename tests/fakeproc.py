@@ -11,12 +11,14 @@ def build_tree(
     root: str | Path,
     procs: Iterable[Mapping[str, Any]],
     cgroups: Mapping[str, tuple[int, int]] | None = None,
+    uptime: float = 100000.0,
 ) -> tuple[Path, Path]:
     base = Path(root)
     proc_root = base / "proc"
     cgroup_root = base / "cgroup"
     proc_root.mkdir(parents=True, exist_ok=True)
     cgroup_root.mkdir(parents=True, exist_ok=True)
+    (proc_root / "uptime").write_text(f"{uptime} 0.0\n", encoding="utf-8")
 
     default_uid = os.getuid()
     for spec in procs:
@@ -77,6 +79,7 @@ def build_tree(
         cg_dir = cgroup_root / cg_path.lstrip("/")
         cg_dir.mkdir(parents=True, exist_ok=True)
         (cg_dir / "memory.current").write_text(f"{cur_bytes}\n", encoding="utf-8")
+        (cg_dir / "memory.stat").write_text(f"anon {cur_bytes}\nfile 0\n", encoding="utf-8")
         (cg_dir / "memory.swap.current").write_text(f"{swap_bytes}\n", encoding="utf-8")
 
     return proc_root, cgroup_root

@@ -128,8 +128,17 @@ def read_cgroup_memory(
         return None
     cg_dir = Path(cgroup_root) / rel
     try:
-        current = int((cg_dir / "memory.current").read_text(encoding="utf-8").strip())
+        stats = (cg_dir / "memory.stat").read_text(encoding="utf-8").splitlines()
+        anon = next(int(line.split()[1]) for line in stats if line.split()[:1] == ["anon"])
         swap = int((cg_dir / "memory.swap.current").read_text(encoding="utf-8").strip())
-    except (FileNotFoundError, ProcessLookupError, PermissionError, OSError, ValueError):
+    except (OSError, ValueError, IndexError, StopIteration):
         return None
-    return current, swap
+    return anon, swap
+
+
+def read_uptime(proc_root: str | Path) -> float:
+    return float((Path(proc_root) / "uptime").read_text(encoding="utf-8").split()[0])
+
+
+def clock_ticks() -> int:
+    return os.sysconf("SC_CLK_TCK")

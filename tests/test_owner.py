@@ -4,7 +4,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 
-from ramcleaner.owner import Owner, group_by_owner, owner_of
+from ramcleaner.owner import Owner, group_by_owner, owner_of, resolve_owner
 from ramcleaner.procscan import scan_processes
 from tests.fakeproc import build_tree
 
@@ -19,6 +19,7 @@ class OwnerTest(unittest.TestCase):
             owner_of(yakuake),
             Owner(app="org.kde.yakuake", unit=None, tab="850422"),
         )
+        self.assertEqual(resolve_owner(yakuake + "/child.scope"), (owner_of(yakuake), yakuake))
 
         konsole = (
             "/user.slice/user-1000.slice/user@1000.service/app.slice/"

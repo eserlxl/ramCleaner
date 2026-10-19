@@ -70,7 +70,7 @@ def _match_app_component(part: str) -> str | None:
     return _decode_escaped(m.group(1))
 
 
-def _resolve_owner(cgroup_path: str) -> tuple[Owner, str]:
+def resolve_owner(cgroup_path: str) -> tuple[Owner, str]:
     parts = [p for p in cgroup_path.split("/") if p]
     if not parts:
         return Owner(app=None, unit="/", tab=None), "/"
@@ -118,7 +118,7 @@ def _resolve_owner(cgroup_path: str) -> tuple[Owner, str]:
 
 
 def owner_of(cgroup_path: str) -> Owner:
-    owner, _ = _resolve_owner(cgroup_path)
+    owner, _ = resolve_owner(cgroup_path)
     return owner
 
 
@@ -167,7 +167,7 @@ def group_by_owner(
     proc_list = list(procs.values()) if isinstance(procs, dict) else list(procs)
     buckets: dict[str, list[ tuple[Proc, Owner] ]] = {}
     for p in proc_list:
-        owner, owner_cg = _resolve_owner(p.cgroup)
+        owner, owner_cg = resolve_owner(p.cgroup)
         buckets.setdefault(owner_cg, []).append((p, owner))
 
     usages: list[OwnerUsage] = []

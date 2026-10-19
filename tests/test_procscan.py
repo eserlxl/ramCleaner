@@ -3,8 +3,14 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from ramcleaner.procscan import read_cgroup_memory, scan_processes
+from ramcleaner.procscan import (
+    clock_ticks,
+    read_cgroup_memory,
+    read_uptime,
+    scan_processes,
+)
 from tests.fakeproc import build_tree
 
 
@@ -79,6 +85,22 @@ class ProcscanTest(unittest.TestCase):
             )
             self.assertEqual(read_cgroup_memory(cgroup_root, cg_path), (1048576, 524288))
             self.assertIsNone(read_cgroup_memory(cgroup_root, "/missing.scope"))
+            cg_dir = cgroup_root / cg_path.lstrip("/")
+            (cg_dir / "memory.current").write_text("9999999999\n", encoding="utf-8")
+            (cg_dir / "memory.stat").write_text("file 9999999999\nanon 1048576\n", encoding="utf-8")
+            self.assertEqual(read_cgroup_memory(cgroup_root, cg_path), (1048576, 524288))
+            for contents in ("file 99\n", "anon bad\n", "anon\n"):
+                with self.subTest(contents=contents):
+                    (cg_dir / "memory.stat").write_text(contents, encoding="utf-8")
+                    self.assertIsNone(read_cgroup_memory(cgroup_root, cg_path))
+
+    def test_uptime_and_clock_ticks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            proc_root, _ = build_tree(tmp, [], uptime=123456.75)
+            self.assertEqual(read_uptime(proc_root), 123456.75)
+        with patch("ramcleaner.procscan.os.sysconf", return_value=250) as sysconf:
+            self.assertEqual(clock_ticks(), 250)
+        sysconf.assert_called_once_with("SC_CLK_TCK")
 
 
 if __name__ == "__main__":
