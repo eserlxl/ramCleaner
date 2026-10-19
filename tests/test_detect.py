@@ -97,6 +97,8 @@ class DetectTest(unittest.TestCase):
         self.assertEqual(command_label("python3", "x" * 41), "python3")
 
     def test_format_age_boundaries(self) -> None:
+        self.assertEqual(format_age(59), "under 1 min")
+        self.assertEqual(format_age(60), "1 min")
         self.assertEqual(format_age(3600 - 1), "59 min")
         self.assertEqual(format_age(3600), "1 h")
         self.assertEqual(format_age(48 * 3600 - 1), "47 h")
@@ -124,6 +126,16 @@ class DetectTest(unittest.TestCase):
             "5 idle copies of python3, running for at least 3 min",
         )
         self.assertNotIn(code, finding.reason)
+
+        # 30 s old: uptime 100000 - start_ticks/100 == 30.
+        procs[10] = replace(young, start_ticks=9_997_000)
+        finding, = self.findings(
+            first=procs, second=procs, config=Config(min_age_hours=0),
+        )
+        self.assertEqual(
+            finding.reason,
+            "5 idle copies of python3, running for under 1 min",
+        )
         self.assertEqual(
             finding.key,
             f"idle-clones:{self.cgroup}:{command_key(young)}",

@@ -48,6 +48,8 @@ def command_label(executable: str, argument: str) -> str:
 
 
 def format_age(seconds: float) -> str:
+    if seconds < 60:
+        return "under 1 min"
     if seconds < 3600:
         return f"{int(seconds // 60)} min"
     if seconds < 48 * 3600:
@@ -121,7 +123,7 @@ def detect(
                 rss_kb=rss,
                 swap_kb=swap,
                 reason=f"{len(members)} idle copies of {command_label(*command)}, "
-                       f"running for at least {format_age(age_s)}",
+                       f"running for {'' if age_s < 60 else 'at least '}{format_age(age_s)}",
                 procs=ordered,
             ))
 

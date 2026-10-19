@@ -27,7 +27,8 @@ from ramcleaner.procscan import (
 
 def format_finding(finding: Finding) -> str:
     return (
-        f"{finding.rule}  {finding.owner_label}  {len(finding.pids)} pids  "
+        f"{finding.rule}  {finding.owner_label}  {len(finding.pids)} "
+        f"{'pid' if len(finding.pids) == 1 else 'pids'}  "
         f"{format_size(finding.rss_kb)} RAM  {format_size(finding.swap_kb)} swap  "
         f"{finding.reason}"
     )

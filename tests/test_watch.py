@@ -1051,6 +1051,12 @@ class FormatTest(unittest.TestCase):
             reason="2 idle copies of bun start.mjs, running for at least 6 h",
         )
 
+    def test_format_finding_counts_one_pid_in_the_singular(self) -> None:
+        one = Finding(key="k", rule="other-user", owner_label="x", pids=(1,), rss_kb=0, swap_kb=0, reason="")
+        two = Finding(key="k", rule="other-user", owner_label="x", pids=(1, 2), rss_kb=0, swap_kb=0, reason="")
+        self.assertIn("  1 pid  ", format_finding(one))
+        self.assertIn("  2 pids  ", format_finding(two))
+
     def test_format_finding_and_notification_size(self) -> None:
         small = self._finding(1023 * 1024)
         large = self._finding(1024 * 1024)
