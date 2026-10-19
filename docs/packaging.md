@@ -18,8 +18,9 @@ cp PKGBUILD ramcleaner.install /tmp/rc-build/
 ## Release and publish
 
 1. Bump `__version__` in `ramcleaner/__init__.py` and `pkgver` in `PKGBUILD` together (reset `pkgrel` to `1`); `tests/test_install.py` fails while they differ.
-2. Run `make lint` and `make test`.
-3. Commit, tag and push: `git tag -a vX.Y.Z -m "Release vX.Y.Z"`, then `git push origin main --follow-tags`.
-4. Pin the checksum once the tag exists: `updpkgsums`, then `makepkg --printsrcinfo > .SRCINFO`, and commit both. The tarball holds the `PKGBUILD`, so the pin is always a separate commit after the tag. Never publish with `sha256sums=('SKIP')`.
-5. Build from the real source (`makepkg -f` in a clean directory holding only `PKGBUILD` and `ramcleaner.install`).
-6. Push `PKGBUILD`, `.SRCINFO` and `ramcleaner.install` to `ssh://aur@aur.archlinux.org/ramcleaner.git`.
+2. In `CHANGELOG.md`, before tagging, rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` for the version just bumped and add a fresh `## [Unreleased]` above it. That renamed section is the GitHub release notes.
+3. Run `make lint` and `make test`.
+4. Commit, tag and push: `git tag -a vX.Y.Z -m "Release vX.Y.Z"`, then `git push origin main --follow-tags`.
+5. Pin the checksum once the tag exists: `updpkgsums`, then `makepkg --printsrcinfo > .SRCINFO`, and commit both. The tarball holds the `PKGBUILD`, so the pin is always a separate commit after the tag. Never publish with `sha256sums=('SKIP')`.
+6. Build from the real source (`makepkg -f` in a clean directory holding only `PKGBUILD` and `ramcleaner.install`).
+7. Push `PKGBUILD`, `.SRCINFO` and `ramcleaner.install` to `ssh://aur@aur.archlinux.org/ramcleaner.git`.

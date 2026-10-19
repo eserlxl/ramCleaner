@@ -153,6 +153,18 @@ class PackageVersionTest(unittest.TestCase):
                 found = re.findall(pattern, text, re.MULTILINE)
                 self.assertEqual(found, [ramcleaner.__version__])
 
+    def test_changelog_released_headings(self) -> None:
+        text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        headings = re.findall(r"^## \[(\d+\.\d+\.\d+)\]", text, re.MULTILINE)
+        self.assertEqual(sorted(headings), sorted(set(headings)))
+
+        def version_key(value: str) -> tuple[int, ...]:
+            return tuple(int(part) for part in value.split("."))
+
+        if headings:
+            newest = max(headings, key=version_key)
+            self.assertLessEqual(version_key(newest), version_key(ramcleaner.__version__))
+
 
 if __name__ == "__main__":
     unittest.main()
