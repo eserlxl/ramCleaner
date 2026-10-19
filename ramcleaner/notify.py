@@ -137,33 +137,51 @@ class NotifySend:
                 running.append((finding, proc))
 
         deadline = time.monotonic() + timeout_s
-        for finding, proc in running:
-            key = finding.key
-            remaining = max(0.0, deadline - time.monotonic())
-            try:
-                stdout, _ = proc.communicate(timeout=remaining)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.communicate()
-                answers[key] = "timeout"
-                continue
-            if proc.returncode != 0:
-                answers[key] = "unavailable"
-                if warning is None:
-                    warning = f"Warning: notify-send exited with status {proc.returncode}"
-            else:
-                answer = (stdout or "").strip()
-                if answer == "hide":
-                    token, hide_warning = run_hide_dialog(
-                        finding,
-                        max(0.0, deadline - time.monotonic()),
-                        self._dialog_runner,
-                    )
-                    answers[key] = token
-                    if hide_warning is not None and dialog_warning is None:
-                        dialog_warning = hide_warning
+        # A later notify-send can exit while an earlier one is still open;
+        # reading in spawn order would delay that finding's Hide dialog.
+        pending = running
+        while pending:
+            still: list[tuple[Finding, subprocess.Popen[str]]] = []
+            for finding, proc in pending:
+                if proc.poll() is None:
+                    still.append((finding, proc))
+                    continue
+                key = finding.key
+                remaining = max(0.0, deadline - time.monotonic())
+                try:
+                    stdout, _ = proc.communicate(timeout=remaining)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.communicate()
+                    answers[key] = "timeout"
+                    continue
+                if proc.returncode != 0:
+                    answers[key] = "unavailable"
+                    if warning is None:
+                        warning = f"Warning: notify-send exited with status {proc.returncode}"
                 else:
-                    answers[key] = answer
+                    answer = (stdout or "").strip()
+                    if answer == "hide":
+                        token, hide_warning = run_hide_dialog(
+                            finding,
+                            max(0.0, deadline - time.monotonic()),
+                            self._dialog_runner,
+                        )
+                        answers[key] = token
+                        if hide_warning is not None and dialog_warning is None:
+                            dialog_warning = hide_warning
+                    else:
+                        answers[key] = answer
+            pending = still
+            if not pending:
+                break
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.2)
+        for finding, proc in pending:
+            proc.kill()
+            proc.communicate()
+            answers[finding.key] = "timeout"
 
         if warning is not None:
             print(warning, file=sys.stderr)

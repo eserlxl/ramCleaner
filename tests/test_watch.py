@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
+import ramcleaner.notify as notify_module
 from ramcleaner.actions import StopResult
 from ramcleaner.cli import main
 from ramcleaner.config import Config
@@ -84,6 +85,7 @@ class _FakePopen:
         expire_on_first_communicate: bool = False,
         expire_cleanup_communicate: bool = False,
         fail_cleanup_wait: bool = False,
+        finish_at: float | None = None,
     ) -> None:
         self.argv = argv
         self._stdout_text = stdout_text
@@ -91,6 +93,8 @@ class _FakePopen:
         self._expire_on_first = expire_on_first_communicate
         self._expire_cleanup = expire_cleanup_communicate
         self._fail_cleanup_wait = fail_cleanup_wait
+        # None: already exited. Otherwise the notify clock must reach this time.
+        self._finish_at = finish_at
         self.communicated = False
         self.communicate_timeouts: list[float | None] = []
         self.wait_timeouts: list[float | None] = []
@@ -101,6 +105,16 @@ class _FakePopen:
 
     def kill(self) -> None:
         self.killed = True
+
+    def poll(self) -> int | None:
+        if self.killed:
+            return self.returncode
+        finish_at = self._finish_at
+        if finish_at is None:
+            return self.returncode
+        if notify_module.time.monotonic() >= finish_at:
+            return self.returncode
+        return None
 
     def wait(self, timeout: float | None = None) -> int:
         self.wait_timeouts.append(timeout)
@@ -1221,6 +1235,74 @@ class NotifySendTest(unittest.TestCase):
         self.assertTrue(created[1].reaped)
         self.assertEqual(created[2].communicate_timeouts, [0.0])
         self.assertFalse(created[2].killed)
+
+    def test_unanswered_notification_is_killed_as_timeout_at_the_deadline(self) -> None:
+        created: list[_FakePopen] = []
+
+        def fake_popen(argv, *, stdout=None, text=None):
+            proc = _FakePopen(argv, stdout_text="stop\n", finish_at=10**9)
+            created.append(proc)
+            return proc
+
+        clock = iter(range(0, 10**6, 10))
+        with (
+            patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen),
+            patch("ramcleaner.notify.time.monotonic", side_effect=lambda: float(next(clock))),
+            patch("ramcleaner.notify.time.sleep"),
+        ):
+            answers = NotifySend().ask([self._finding("k1")], 30)
+
+        self.assertEqual(answers, {"k1": "timeout"})
+        self.assertTrue(created[0].killed)
+        self.assertTrue(created[0].communicated)
+
+    def test_later_hide_runs_before_an_earlier_notification_is_answered(self) -> None:
+        first = self._finding("k1", (10, 11))
+        second = Finding(
+            key="k2",
+            rule="other-user",
+            owner_label="clamav-daemon.service",
+            pids=(20,),
+            rss_kb=600 * 1024,
+            swap_kb=0,
+            reason="information only, not stopped",
+        )
+        created: list[_FakePopen] = []
+        events: list[str] = []
+        clock = {"now": 100.0}
+
+        def fake_popen(argv, *, stdout=None, text=None):
+            if not created:
+                proc = _FakePopen(argv, stdout_text="later\n", finish_at=100.25)
+            else:
+                proc = _FakePopen(argv, stdout_text="hide\n")
+            created.append(proc)
+            return proc
+
+        def runner(argv, timeout_s):
+            self.assertFalse(created[0].communicated)
+            self.assertTrue(created[1].communicated)
+            events.append(next(arg for arg in argv if arg.startswith("--text=")))
+            return subprocess.CompletedProcess(argv, 0, "1 hour\n", "")
+
+        def monotonic() -> float:
+            return clock["now"]
+
+        def sleep(seconds: float) -> None:
+            self.assertEqual(seconds, 0.2)
+            clock["now"] += seconds
+
+        with (
+            patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen),
+            patch("ramcleaner.notify.time.monotonic", side_effect=monotonic),
+            patch("ramcleaner.notify.time.sleep", side_effect=sleep),
+        ):
+            answers = NotifySend(dialog_runner=runner).ask([first, second], 30)
+
+        self.assertEqual(answers, {"k1": "later", "k2": "1 hour"})
+        self.assertEqual(events, ["--text=Hide clamav-daemon.service (600 MB) for:"])
+        self.assertTrue(created[0].communicated)
+        self.assertFalse(created[0].killed)
 
     def test_hide_passes_remaining_ask_time_to_zenity(self) -> None:
         finding = self._finding()
