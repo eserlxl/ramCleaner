@@ -23,6 +23,7 @@ _INT_MINIMUMS: dict[str, int] = {
     "term_timeout": 0,
     "ignore_for_hours": 0,
     "ask_timeout_minutes": 1,
+    "other_users_min_mb": 0,
 }
 _INT_KEYS = frozenset(_INT_MINIMUMS)
 _ALL_KEYS = _INT_KEYS | {"protected", "stop_rules"}
@@ -38,6 +39,7 @@ class Config:
     term_timeout: int = 10
     ignore_for_hours: int = 24
     ask_timeout_minutes: int = 10
+    other_users_min_mb: int = 512
     protected: tuple[str, ...] = ()
     stop_rules: tuple[tuple[str, str], ...] = ()
 

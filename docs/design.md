@@ -36,7 +36,7 @@ whether the nested owner is an unreadable grandchild or an unreadable intermedia
 readable grandchild. The fallback includes file-backed pages. The report appends
 `VmRSS: cgroup memory unreadable` only on the unreadable row, and zswap on that row is 0.
 
-Only the invoking user's processes are considered.
+The invoking user's processes are grouped, detected, and the only ones that can be stopped. Processes of every other uid, including root services, are information only: `ramcleaner report` groups them by owner and lists each owner at or above `other_users_min_mb` (default 512 MiB of `VmRSS + VmSwap`) under `Other users (information only):`. They never become findings and are never stopped.
 
 ## Owner attribution
 

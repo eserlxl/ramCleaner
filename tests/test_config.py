@@ -21,6 +21,7 @@ class ConfigTest(unittest.TestCase):
             self.assertEqual(cfg.term_timeout, 10)
             self.assertEqual(cfg.ignore_for_hours, 24)
             self.assertEqual(cfg.ask_timeout_minutes, 10)
+            self.assertEqual(cfg.other_users_min_mb, 512)
             self.assertEqual(cfg.protected, ())
             self.assertEqual(cfg.stop_rules, ())
 
@@ -69,6 +70,7 @@ class ConfigTest(unittest.TestCase):
             ("term_timeout", 0),
             ("ignore_for_hours", 0),
             ("ask_timeout_minutes", 1),
+            ("other_users_min_mb", 0),
         )
         with tempfile.TemporaryDirectory() as tmp:
             cfg_path = Path(tmp) / "config.toml"

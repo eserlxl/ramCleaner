@@ -54,6 +54,7 @@ systemctl --user enable --now ramcleaner-watch.timer
 - Before sending any signal, a pidfd is opened for each PID and its `/proc/PID` entry is re-checked to confirm its `start_ticks` and `cmdline` still match the scan and that it is not in the protected list (`PID 1`, `ramcleaner`, `systemd`, `kwin_wayland`, `plasmashell`, `ksmserver`, plus `protected` in `config.toml`); signals are sent through that pidfd so a reused PID can never be hit.
 - `SIGTERM` is sent by default; `SIGKILL` is never sent unless `--force` is passed to `ramcleaner clean`.
 - Configured `stop_rules` run the configured graceful stop command (split with `shlex.split`, without a shell) instead of sending signals directly.
+- Other users' processes are only reported and are never stopped.
 
 ## Documentation
 

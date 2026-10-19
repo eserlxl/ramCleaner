@@ -18,6 +18,7 @@ The file is optional and parsed as UTF-8 TOML with Python's `tomllib`. Every key
 | `term_timeout` | integer (`>= 0`) | `10` | Seconds to wait (polling `/proc/PID` every 0.2 s) after sending `SIGTERM` or running a stop rule before reporting surviving processes or sending `SIGKILL` under `--force`. `--force` sends `SIGKILL` only to processes that survived `SIGTERM`, never to a stop rule's survivors. |
 | `ignore_for_hours` | integer (`>= 0`) | `24` | Hours to suppress a finding key in `ignored.json` when the notification is ignored or dismissed without clicking "Stop" in `ramcleaner watch`. An unanswered notification that reaches `ask_timeout_minutes`, or one `notify-send` could not show, is not suppressed and will be asked again on the next run. |
 | `ask_timeout_minutes` | integer (`>= 1`) | `10` | Maximum minutes `ramcleaner watch` waits for all `notify-send` action notifications in a single pass (the popup's `--expire-time` is one minute longer, so `ramcleaner` ends the wait before the notification server closes it). Values `< 1` are rejected with a configuration error. |
+| `other_users_min_mb` | integer (`>= 0`) | `512` | Minimum combined `VmRSS + VmSwap` in MiB (`rss_kb + swap_kb >= other_users_min_mb * 1024`) for an owner belonging to another user, including a root service, to appear in the `ramcleaner report` section `Other users (information only):`. Owners below the threshold are omitted, and the section is omitted when none qualify. These processes are never findings and are never stopped. |
 | `protected` | array of strings | `[]` | Additional process `comm` names (from `/proc/PID/stat`) that are never reported or stopped. Extends the built-in protected set: PID `1`, the current `ramcleaner` process and its parent, and `comm` in `systemd`, `kwin_wayland`, `plasmashell`, and `ksmserver`. |
 | `stop_rules` | array of `[pattern, command]` pairs, array of `{pattern, command}` tables, or table | `[]` | Ordered list of `(pattern, command)` pairs checked before sending `SIGTERM`. If `re.search(pattern, " ".join(cmdline))` matches any verified target process in the finding, `command` is split with `shlex.split` and run without a shell (60 s timeout) instead of signaling the PIDs directly. Every pattern must be a valid regular expression compilable by `re.compile`, and every command must be non-empty and parseable by `shlex.split`; invalid regex patterns, empty or whitespace commands, and unsplittable command strings (such as unbalanced quotes) are rejected with a configuration error. |
 
@@ -57,6 +58,7 @@ min_growth_mb = 512
 term_timeout = 10
 ignore_for_hours = 24
 ask_timeout_minutes = 10
+other_users_min_mb = 512
 protected = []
 
 stop_rules = [

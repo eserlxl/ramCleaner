@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import fcntl
 import math
+import pwd
 import sys
 import time
 from collections.abc import Sequence
@@ -13,10 +14,10 @@ from pathlib import Path
 from ramcleaner import __version__
 from ramcleaner.actions import stop_finding
 from ramcleaner.config import Config, ConfigError, load_config
-from ramcleaner.detect import Finding, detect, same_boot_history
+from ramcleaner.detect import Finding, detect, format_size, same_boot_history
 from ramcleaner.history import default_history_path, load_history
 from ramcleaner.notify import NotifySend
-from ramcleaner.owner import OwnerUsage, group_by_owner
+from ramcleaner.owner import OwnerUsage, group_by_owner, resolve_owner
 from ramcleaner.procscan import (
     Proc,
     clock_ticks,
@@ -142,14 +143,43 @@ def _format_row(usage: OwnerUsage) -> str:
     return row
 
 
+def _user_name(uid: int) -> str:
+    try:
+        return pwd.getpwuid(uid).pw_name
+    except KeyError:
+        return str(uid)
+
+
+def _other_user_lines(procs: dict[int, Proc], min_mb: int) -> list[str]:
+    totals: dict[tuple[int, str], int] = {}
+    labels: dict[tuple[int, str], str] = {}
+    for proc in procs.values():
+        owner, owner_cg = resolve_owner(proc.cgroup)
+        key = (proc.uid, owner_cg)
+        totals[key] = totals.get(key, 0) + proc.rss_kb + proc.swap_kb
+        labels[key] = owner.label
+    threshold_kb = min_mb * 1024
+    rows: list[tuple[int, str, str]] = []
+    for (uid, owner_cg), total_kb in totals.items():
+        if total_kb < threshold_kb:
+            continue
+        rows.append((total_kb, _user_name(uid), labels[(uid, owner_cg)]))
+    rows.sort(key=lambda row: (-row[0], row[1], row[2]))
+    return [f"{name}  {label}  {format_size(total_kb)}" for total_kb, name, label in rows]
+
+
 def _scan_and_detect(
     args: argparse.Namespace,
     config: Config,
-) -> tuple[dict[int, Proc], list[Finding], list[dict]]:
+) -> tuple[dict[int, Proc], dict[int, Proc], list[Finding], list[dict]]:
     history = load_history(args.history_file)
     first = scan_processes(proc_root=args.proc_root)
     time.sleep(args.interval)
-    procs = scan_processes(proc_root=args.proc_root)
+    others: dict[int, Proc] = {}
+    if args.command == "report":
+        procs, others = scan_processes(proc_root=args.proc_root, all_users=True)
+    else:
+        procs = scan_processes(proc_root=args.proc_root)
     boot_id = read_boot_id(args.proc_root)
     findings = detect(
         first,
@@ -160,7 +190,7 @@ def _scan_and_detect(
         history,
         boot_id=boot_id,
     )
-    return procs, findings, same_boot_history(history, boot_id)
+    return procs, others, findings, same_boot_history(history, boot_id)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -218,7 +248,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "watch":
             return run_watch(args, config, notifier=NotifySend())
 
-        procs, findings, history = _scan_and_detect(args, config)
+        procs, others, findings, history = _scan_and_detect(args, config)
         now = time.time()
         recent = sum(
             1
@@ -237,6 +267,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("RAM = anonymous memory, page cache excluded")
             for usage in usages[: max(args.top, 0)]:
                 print(_format_row(usage))
+            other_lines = _other_user_lines(others, config.other_users_min_mb)
+            if other_lines:
+                print("Other users (information only):")
+                for line in other_lines:
+                    print(line)
             print("Findings:" if findings else "Findings: none")
             for finding in findings:
                 print(format_finding(finding))

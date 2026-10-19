@@ -48,7 +48,7 @@ options:
   --top TOP             Maximum number of owners to display (default: 15).
 ```
 
-Takes two process samples `--interval` seconds apart, prints `RAM = anonymous memory, page cache excluded`, prints up to `--top` owner rows sorted by total memory (`RAM + swap`) descending, and then prints `Findings:` followed by each finding or `Findings: none`.
+Takes two process samples `--interval` seconds apart, prints `RAM = anonymous memory, page cache excluded`, and prints up to `--top` owner rows sorted by total memory (`RAM + swap`) descending. It then prints `Other users (information only):` when an owner belonging to another user (grouped by cgroup owner and labeled with the user name, or the uid when the name is unknown) holds `VmRSS + VmSwap` of at least `other_users_min_mb` (default 512 MiB). Those lines are sorted largest first. Owners under the threshold are omitted, and the section is omitted when none qualify. Those processes are not findings and are not stopped. `report` then prints `Findings:` followed by each finding or `Findings: none`.
 
 `report` reads `--history-file` if it exists (for `zombie` and `growth` detection) and never creates or modifies state files. When fewer than 4 recorded scans in `--history-file` fall within `history_hours` of now, `report` prints an advisory note to `stderr` after the findings (`Note: <n> of 4 watch scans in the last <h> h; growth checks need 4 and zombie checks need 1, recorded by the ramcleaner-watch timer`).
 

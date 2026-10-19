@@ -76,6 +76,24 @@ class ProcscanTest(unittest.TestCase):
             self.assertEqual(procs[100].swap_kb, 0)
             self.assertEqual(procs[100].cmdline, ())
 
+    def test_all_users_keeps_own_scan_and_returns_other_uids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            proc_root, _ = build_tree(
+                tmp,
+                [
+                    {"pid": 100, "comm": "mine", "uid": 1000, "rss_kb": 1024, "swap_kb": 2},
+                    {"pid": 200, "comm": "other", "uid": 1001, "rss_kb": 4096, "swap_kb": 8},
+                ],
+            )
+            own = scan_processes(proc_root=proc_root, uid=1000)
+            own_again, others = scan_processes(proc_root=proc_root, uid=1000, all_users=True)
+            self.assertEqual(own_again, own)
+            self.assertEqual(set(own), {100})
+            self.assertEqual(set(others), {200})
+            self.assertEqual(others[200].uid, 1001)
+            self.assertEqual(others[200].rss_kb, 4096)
+            self.assertEqual(others[200].swap_kb, 8)
+
     def test_read_cgroup_memory(self) -> None:
         cg_path = "/user.slice/user-1000.slice/user@1000.service/app.slice/app-foo-1.scope"
         zswap_cg_path = "/user.slice/user-1000.slice/user@1000.service/app.slice/app-bar-1.scope"

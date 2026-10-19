@@ -11,6 +11,7 @@ import time
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import ramcleaner
@@ -437,6 +438,132 @@ class ReportTest(unittest.TestCase):
                     )
                 self.assertEqual(rc, 0)
                 self.assertEqual(stderr.getvalue(), expected)
+
+    def test_report_lists_other_users_at_or_above_threshold(self) -> None:
+        # Five idle clones of another uid would be an idle-clones finding if the own-user scan included them.
+        service_uid = 0 if os.getuid() != 0 else 65534
+        service_name = "root" if service_uid == 0 else "nobody"
+        tiny_uid = 42 if os.getuid() != 42 else 43
+        journald = "/system.slice/systemd-journald.service"
+        postgres = "/system.slice/postgres.service"
+        tiny = "/system.slice/tiny.service"
+        own = "/user.slice/user-1000.slice/session-1.scope"
+        procs = [
+            {
+                "pid": 20 + idx,
+                "ppid": 1,
+                "comm": "journald",
+                "uid": service_uid,
+                "rss_kb": 250 * 1024,
+                "swap_kb": 1024 if idx == 0 else 0,
+                "start_ticks": 100,
+                "cgroup": journald,
+            }
+            for idx in range(5)
+        ]
+        procs.extend(
+            [
+                {
+                    "pid": 10,
+                    "ppid": 1,
+                    "comm": "mine",
+                    "uid": os.getuid(),
+                    "rss_kb": 1024,
+                    "cgroup": own,
+                },
+                {
+                    "pid": 30,
+                    "ppid": 1,
+                    "comm": "postgres",
+                    "uid": service_uid,
+                    "rss_kb": 512 * 1024,
+                    "cgroup": postgres,
+                },
+                {
+                    "pid": 40,
+                    "ppid": 1,
+                    "comm": "tiny",
+                    "uid": tiny_uid,
+                    "rss_kb": 100 * 1024,
+                    "cgroup": tiny,
+                },
+            ]
+        )
+        proc_root, cgroup_root = build_tree(self.root, procs)
+
+        def names(uid: int) -> SimpleNamespace:
+            if uid == service_uid:
+                return SimpleNamespace(pw_name=service_name)
+            raise KeyError(uid)
+
+        def run() -> str:
+            stdout = io.StringIO()
+            with (
+                redirect_stdout(stdout),
+                redirect_stderr(io.StringIO()),
+                patch("ramcleaner.cli.pwd.getpwuid", side_effect=names),
+            ):
+                rc = main(
+                    [
+                        "report",
+                        "--proc-root",
+                        str(proc_root),
+                        "--cgroup-root",
+                        str(cgroup_root),
+                        "--interval",
+                        "0",
+                    ]
+                )
+            self.assertEqual(rc, 0)
+            return stdout.getvalue()
+
+        text = run()
+        head, header, tail = text.partition("Other users (information only):\n")
+        self.assertEqual(header, "Other users (information only):\n")
+        self.assertIn("mine", head)
+        self.assertNotIn("systemd-journald.service", head)
+        self.assertNotIn("idle-clones", text)
+        other, findings_header, findings = tail.partition("Findings:")
+        self.assertEqual(findings_header, "Findings:")
+        self.assertEqual(findings, " none\n")
+        self.assertEqual(
+            [line for line in other.splitlines() if line.strip()],
+            [
+                f"{service_name}  systemd-journald.service  1.2 GB",
+                f"{service_name}  postgres.service  512 MB",
+            ],
+        )
+
+        config_file = self.root / "config" / "ramcleaner" / "config.toml"
+        config_file.parent.mkdir(parents=True)
+        config_file.write_text("other_users_min_mb = 513\n", encoding="utf-8")
+        text = run()
+        self.assertIn(
+            f"Other users (information only):\n{service_name}  systemd-journald.service  1.2 GB\nFindings: none\n",
+            text,
+        )
+        self.assertNotIn("postgres.service", text)
+        self.assertNotIn("tiny.service", text)
+
+        config_file.write_text("other_users_min_mb = 2000\n", encoding="utf-8")
+        text = run()
+        self.assertNotIn("Other users", text)
+        self.assertIn("mine", text)
+        self.assertTrue(text.endswith("Findings: none\n"))
+
+        config_file.write_text("other_users_min_mb = 100\n", encoding="utf-8")
+        text = run()
+        _, _, tail = text.partition("Other users (information only):\n")
+        other, _, _ = tail.partition("Findings:")
+        self.assertEqual(
+            [line for line in other.splitlines() if line.strip()],
+            [
+                f"{service_name}  systemd-journald.service  1.2 GB",
+                f"{service_name}  postgres.service  512 MB",
+                f"{tiny_uid}  tiny.service  100 MB",
+            ],
+        )
+        self.assertNotIn("idle-clones", text)
 
 
 if __name__ == "__main__":

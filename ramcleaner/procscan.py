@@ -74,14 +74,16 @@ def _parse_cgroup(text: str) -> str:
 def scan_processes(
     proc_root: str | Path = "/proc",
     uid: int | None = None,
-) -> dict[int, Proc]:
+    all_users: bool = False,
+) -> dict[int, Proc] | tuple[dict[int, Proc], dict[int, Proc]]:
     target_uid = os.getuid() if uid is None else uid
     root = Path(proc_root)
     procs: dict[int, Proc] = {}
+    others: dict[int, Proc] = {}
     try:
         entries = list(root.iterdir())
     except (FileNotFoundError, ProcessLookupError, PermissionError, OSError):
-        return procs
+        return (procs, others) if all_users else procs
 
     for entry in entries:
         if not entry.name.isdigit():
@@ -100,10 +102,10 @@ def scan_processes(
         except (ValueError, IndexError):
             continue
 
-        if real_uid is None or real_uid != target_uid:
+        if real_uid is None or (real_uid != target_uid and not all_users):
             continue
 
-        procs[pid] = Proc(
+        proc = Proc(
             pid=pid,
             ppid=ppid,
             state=state,
@@ -116,7 +118,11 @@ def scan_processes(
             start_ticks=start_ticks,
             cgroup=_parse_cgroup(cgroup_text),
         )
-    return procs
+        if real_uid == target_uid:
+            procs[pid] = proc
+        else:
+            others[pid] = proc
+    return (procs, others) if all_users else procs
 
 
 def read_cgroup_memory(
