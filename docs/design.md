@@ -97,9 +97,10 @@ Stopping is per finding and only after approval.
   `ramcleaner-watch.service`, `Type=oneshot` with `TimeoutStartSec=infinity`); guarded by
   `watch.lock`, records history, and turns each new finding into a desktop notification with "Stop"
   and "Ignore" actions (`notify-send --expire-time --action`), waiting against a shared
-  `ask_timeout_minutes` deadline (default 10 min). Timed-out notifications are killed and neither
-  stop nor suppress the finding (it is asked again on the next run); every other non-"Stop" outcome
-  suppresses that finding's key in `ignored.json` for `ignore_for_hours` (default 24 h).
+  `ask_timeout_minutes` deadline (default 10 min). Timed-out notifications are killed, and like
+  unavailable notifications (`notify-send` could not show them) they neither stop nor suppress the finding (it is
+  asked again on the next run); only "Ignore" or a dismissal suppresses that finding's key in
+  `ignored.json` for `ignore_for_hours` (default 24 h).
 
 `bin/ramcleaner` locates the package in `../lib/ramcleaner` when installed via `Makefile` or in the
 repository root when run from a checkout.
