@@ -41,9 +41,9 @@ def command_key(proc: Proc) -> tuple[str, str]:
 
 
 def _is_browser_child(proc: Proc) -> bool:
-    # Chromium and Electron run one idle renderer per background tab or window; they look
-    # like clones, but stopping one closes a tab the user still has open.
-    return any(arg.startswith("--type=") for arg in proc.cmdline[1:])
+    # Chromium and Electron (--type=) and Firefox (-contentproc) run one content process per
+    # background tab or window; they look like clones, but stopping one closes a tab.
+    return any(arg.startswith("--type=") or arg == "-contentproc" for arg in proc.cmdline[1:])
 
 
 def detect(
@@ -133,6 +133,7 @@ def detect(
             len(sizes) >= 5
             and all(after * 100 >= before * 99 for before, after in pairwise(sizes))
             and sizes[-1] - sizes[0] >= config.min_growth_mb * 1024
+            and not _is_browser_child(proc)
         ):
             owner, _ = resolve_owner(proc.cgroup)
             findings.append(Finding(

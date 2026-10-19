@@ -7,7 +7,7 @@ from dataclasses import replace
 from unittest.mock import patch
 
 from ramcleaner.config import Config
-from ramcleaner.detect import command_key, detect, is_protected
+from ramcleaner.detect import _is_browser_child, command_key, detect, is_protected
 from ramcleaner.procscan import scan_processes
 from tests.fakeproc import build_tree
 
@@ -77,6 +77,47 @@ class DetectTest(unittest.TestCase):
         renderers = {pid: replace(proc, cmdline=("/opt/app/electron", "--type=renderer"))
                      for pid, proc in self.procs.items()}
         self.assertEqual(self.findings(first=renderers, second=renderers), [])
+
+    def test_browser_child_matches_type_or_contentproc(self) -> None:
+        proc = self.procs[10]
+        self.assertTrue(_is_browser_child(replace(
+            proc, cmdline=("/opt/app/electron", "--type=renderer"))))
+        self.assertTrue(_is_browser_child(replace(
+            proc, cmdline=("/opt/app/electron", "--type=gpu-process"))))
+        self.assertTrue(_is_browser_child(replace(
+            proc, cmdline=("/usr/lib/firefox/firefox", "-contentproc"))))
+        self.assertFalse(_is_browser_child(replace(
+            proc, cmdline=("/usr/bin/bun", "--silent", "/opt/context-mode/start.mjs"))))
+
+    def test_contentproc_and_renderer_absent_from_clones_and_growth(self) -> None:
+        firefox = {
+            pid + 100: replace(proc, pid=pid + 100,
+                               cmdline=("/usr/lib/firefox/firefox", "-contentproc"))
+            for pid, proc in self.procs.items()
+        }
+        grown = {"rss_kb": 548 * 1024, "swap_kb": 64 * 1024}
+        renderer = replace(self.procs[11], pid=201,
+                           cmdline=("/opt/app/electron", "--type=renderer"), **grown)
+        content = replace(self.procs[12], pid=202,
+                          cmdline=("/usr/lib/firefox/firefox", "-contentproc"), **grown)
+        second = {**self.procs, **firefox, 10: replace(self.procs[10], **grown),
+                  201: renderer, 202: content}
+        first = {**self.procs, **firefox, 201: renderer, 202: content}
+        history = [
+            {"time": 1000000 - 400 + index * 100,
+             "procs": {"10:100": size * 1024, "201:100": size * 1024,
+                       "202:100": size * 1024},
+             "zombies": []}
+            for index, size in enumerate((100, 200, 300, 400))
+        ]
+        findings = self.findings(first=first, second=second, history=history)
+        self.assertEqual([finding.rule for finding in findings], ["idle-clones", "growth"])
+        self.assertEqual(findings[0].pids, (10, 11, 12, 13, 14))
+        self.assertEqual(findings[1].pids, (10,))
+        cmdlines = [proc.cmdline for finding in findings for proc in finding.procs]
+        self.assertNotIn(("/usr/lib/firefox/firefox", "-contentproc"), cmdlines)
+        self.assertNotIn(("/opt/app/electron", "--type=renderer"), cmdlines)
+        self.assertIn(("/usr/bin/bun", "--silent", "/opt/context-mode/start.mjs"), cmdlines)
 
     def test_clone_thresholds(self) -> None:
         for config in (

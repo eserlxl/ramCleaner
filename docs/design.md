@@ -57,13 +57,14 @@ with an id, the processes involved, their RSS and swap, and a one-line reason.
    it has at least `min_clones` members (default 4) that are idle (no CPU ticks between the two
    samples), older than `min_age_hours` (default 6 h), and whose RSS + swap totals at least
    `min_group_mb` (default 1024). Only the idle members are proposed for stopping. Chromium and
-   Electron child processes (a `--type=` argument) are never clones: each idle renderer is an open
-   tab or window.
+   Electron child processes (a `--type=` argument) and Firefox content processes (`-contentproc`)
+   are never clones: each is an open tab or window.
 2. **Unreaped zombies.** A zombie whose parent is alive and that has been a zombie in two scans in
    a row; the fix is on the parent, so the finding names the parent.
 3. **Growth.** A process whose RSS + swap grew by at least `min_growth_mb` (default 512) over the
    `history_hours` window (default 24 h, at least 4 recorded scans plus the current sample) with no
-   step shrinking by more than 1 % of the previous size. History lives in
+   step shrinking by more than 1 % of the previous size. Chromium and Electron child processes (a
+   `--type=` argument) and Firefox content processes (`-contentproc`) are excluded. History lives in
    `$XDG_STATE_HOME/ramcleaner/history.json` (default `~/.local/state/ramcleaner/`), pruned to the
    window.
 
