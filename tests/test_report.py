@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -135,7 +136,10 @@ class ReportTest(unittest.TestCase):
                 capture_output=True, text=True, check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(result.stderr, "")
+            self.assertEqual(
+                result.stderr,
+                "Note: 0 of 4 watch scans in the last 24 h; growth and zombie checks need the ramcleaner-watch timer\n",
+            )
             self.assertEqual(result.stdout, buf.getvalue())
             self.assertFalse(self.history.parent.exists())
 
@@ -281,6 +285,53 @@ class ReportTest(unittest.TestCase):
         self.assertTrue(rows[0].endswith("  1000.0 MB RAM    700.0 MB swap    150.0 MB in zswap"))
         for row in rows[1:]:
             self.assertNotIn("zswap", row)
+
+    def test_report_history_note_when_scans_under_four(self) -> None:
+        proc_root, cgroup_root = build_tree(self.root, [])
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            rc = main(
+                [
+                    "report",
+                    "--proc-root",
+                    str(proc_root),
+                    "--cgroup-root",
+                    str(cgroup_root),
+                    "--interval",
+                    "0",
+                ]
+            )
+        self.assertEqual(rc, 0)
+        self.assertEqual(
+            stderr.getvalue(),
+            "Note: 0 of 4 watch scans in the last 24 h; growth and zombie checks need the ramcleaner-watch timer\n",
+        )
+
+        now = time.time()
+        entries = [
+            {"time": now - idx * 60, "procs": {}, "zombies": []}
+            for idx in range(4)
+        ]
+        self.history.parent.mkdir(parents=True, exist_ok=True)
+        self.history.write_text(json.dumps(entries), encoding="utf-8")
+
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            rc = main(
+                [
+                    "report",
+                    "--proc-root",
+                    str(proc_root),
+                    "--cgroup-root",
+                    str(cgroup_root),
+                    "--interval",
+                    "0",
+                ]
+            )
+        self.assertEqual(rc, 0)
+        self.assertEqual(stderr.getvalue(), "")
 
 
 if __name__ == "__main__":

@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -221,6 +223,64 @@ class CleanTest(unittest.TestCase):
             self.assertIn(str(pid), output)
             self.assertIn(f"  {pid}  400 MB  bun /opt/context-mode/start.mjs", output)
         self.assertIn("bun /opt/context-mode/start.mjs", output)
+
+    def test_clean_history_note_when_scans_under_four(self) -> None:
+        empty_proc, empty_cg = build_tree(self.root / "empty", [])
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with (
+            patch("ramcleaner.cli.sys.stdin.isatty", return_value=True),
+            redirect_stdout(stdout),
+            redirect_stderr(stderr),
+        ):
+            rc = main(
+                [
+                    "clean",
+                    "--interval",
+                    "0",
+                    "--proc-root",
+                    str(empty_proc),
+                    "--cgroup-root",
+                    str(empty_cg),
+                ]
+            )
+        self.assertEqual(rc, 0)
+        self.assertEqual(stdout.getvalue().strip(), "Findings: none")
+        self.assertEqual(
+            stderr.getvalue(),
+            "Note: 0 of 4 watch scans in the last 24 h; growth and zombie checks need the ramcleaner-watch timer\n",
+        )
+
+        history_path = self.root / "state" / "ramcleaner" / "history.json"
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        now = time.time()
+        entries = [
+            {"time": now - idx * 60, "procs": {}, "zombies": []}
+            for idx in range(4)
+        ]
+        history_path.write_text(json.dumps(entries), encoding="utf-8")
+
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with (
+            patch("ramcleaner.cli.sys.stdin.isatty", return_value=True),
+            redirect_stdout(stdout),
+            redirect_stderr(stderr),
+        ):
+            rc = main(
+                [
+                    "clean",
+                    "--interval",
+                    "0",
+                    "--proc-root",
+                    str(empty_proc),
+                    "--cgroup-root",
+                    str(empty_cg),
+                ]
+            )
+        self.assertEqual(rc, 0)
+        self.assertEqual(stdout.getvalue().strip(), "Findings: none")
+        self.assertEqual(stderr.getvalue(), "")
 
 
 if __name__ == "__main__":

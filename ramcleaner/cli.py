@@ -127,7 +127,7 @@ def _format_row(usage: OwnerUsage) -> str:
 def _scan_and_detect(
     args: argparse.Namespace,
     config: Config,
-) -> tuple[dict[int, Proc], list[Finding]]:
+) -> tuple[dict[int, Proc], list[Finding], list[dict]]:
     history = load_history(args.history_file)
     first = scan_processes(proc_root=args.proc_root)
     time.sleep(args.interval)
@@ -140,7 +140,7 @@ def _scan_and_detect(
         clock_ticks(),
         history,
     )
-    return procs, findings
+    return procs, findings, history
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -191,7 +191,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "watch":
             return run_watch(args, config, notifier=NotifySend())
 
-        procs, findings = _scan_and_detect(args, config)
+        procs, findings, history = _scan_and_detect(args, config)
+        now = time.time()
+        recent = sum(
+            1
+            for entry in history
+            if now - config.history_hours * 3600 <= entry["time"] <= now
+        )
+        note = (
+            f"Note: {recent} of 4 watch scans in the last {config.history_hours} h; "
+            "growth and zombie checks need the ramcleaner-watch timer"
+            if recent < 4
+            else None
+        )
 
         if args.command == "report":
             usages = group_by_owner(procs, cgroup_root=args.cgroup_root)
@@ -201,10 +213,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("Findings:" if findings else "Findings: none")
             for finding in findings:
                 print(format_finding(finding))
+            if note:
+                print(note, file=sys.stderr)
             return 0
 
         if not findings:
             print("Findings: none")
+            if note:
+                print(note, file=sys.stderr)
             return 0
         exit_code = 0
         for finding in findings:
@@ -232,6 +248,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     if result.still_alive:
                         exit_code = 1
                 break
+        if note:
+            print(note, file=sys.stderr)
         return exit_code
 
     return 0
