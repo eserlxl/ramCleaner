@@ -46,7 +46,7 @@ options:
 
 Takes two process samples `--interval` seconds apart, prints `RAM = anonymous memory, page cache excluded`, prints up to `--top` owner rows sorted by total memory (`RAM + swap`) descending, and then prints `Findings:` followed by each finding or `Findings: none`.
 
-`report` reads `--history-file` if it exists (for `zombie` and `growth` detection) and never creates or modifies state files. When fewer than 4 recorded scans in `--history-file` fall within `history_hours` of now, `report` prints an advisory note to `stderr` after the findings (`Note: <n> of 4 watch scans in the last <h> h; growth and zombie checks need the ramcleaner-watch timer`).
+`report` reads `--history-file` if it exists (for `zombie` and `growth` detection) and never creates or modifies state files. When fewer than 4 recorded scans in `--history-file` fall within `history_hours` of now, `report` prints an advisory note to `stderr` after the findings (`Note: <n> of 4 watch scans in the last <h> h; growth checks need 4 and zombie checks need 1, recorded by the ramcleaner-watch timer`).
 
 ### `ramcleaner clean`
 

@@ -136,6 +136,32 @@ class CleanTest(unittest.TestCase):
                 self.assertIn("10, 11, 12, 13", output)
                 self.assertIn("14 (pid reused)", output)
 
+    def test_history_note_follows_prompts_when_findings_exist(self) -> None:
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with (
+            patch("ramcleaner.cli.sys.stdin.isatty", return_value=True),
+            patch("builtins.input", side_effect=["n"]),
+            patch("ramcleaner.cli.stop_finding") as mock_stop,
+            redirect_stdout(stdout),
+            redirect_stderr(stderr),
+        ):
+            rc = main(
+                [
+                    "clean",
+                    "--interval",
+                    "0",
+                    "--proc-root",
+                    str(self.proc_root),
+                    "--cgroup-root",
+                    str(self.cgroup_root),
+                ]
+            )
+        self.assertEqual(rc, 0)
+        mock_stop.assert_not_called()
+        self.assertIn("idle-clones", stdout.getvalue())
+        self.assertIn("Note: 0 of 4 watch scans", stderr.getvalue())
+
     def test_decline_or_eof_does_not_stop(self) -> None:
         for side_effect in (["n"], [""], ["no"], EOFError):
             with self.subTest(side_effect=side_effect):
@@ -248,7 +274,7 @@ class CleanTest(unittest.TestCase):
         self.assertEqual(stdout.getvalue().strip(), "Findings: none")
         self.assertEqual(
             stderr.getvalue(),
-            "Note: 0 of 4 watch scans in the last 24 h; growth and zombie checks need the ramcleaner-watch timer\n",
+            "Note: 0 of 4 watch scans in the last 24 h; growth checks need 4 and zombie checks need 1, recorded by the ramcleaner-watch timer\n",
         )
 
         history_path = self.root / "state" / "ramcleaner" / "history.json"

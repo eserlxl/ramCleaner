@@ -138,7 +138,7 @@ class ReportTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(
                 result.stderr,
-                "Note: 0 of 4 watch scans in the last 24 h; growth and zombie checks need the ramcleaner-watch timer\n",
+                "Note: 0 of 4 watch scans in the last 24 h; growth checks need 4 and zombie checks need 1, recorded by the ramcleaner-watch timer\n",
             )
             self.assertEqual(result.stdout, buf.getvalue())
             self.assertFalse(self.history.parent.exists())
@@ -305,7 +305,7 @@ class ReportTest(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(
             stderr.getvalue(),
-            "Note: 0 of 4 watch scans in the last 24 h; growth and zombie checks need the ramcleaner-watch timer\n",
+            "Note: 0 of 4 watch scans in the last 24 h; growth checks need 4 and zombie checks need 1, recorded by the ramcleaner-watch timer\n",
         )
 
         now = time.time()

@@ -200,7 +200,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         note = (
             f"Note: {recent} of 4 watch scans in the last {config.history_hours} h; "
-            "growth and zombie checks need the ramcleaner-watch timer"
+            "growth checks need 4 and zombie checks need 1, recorded by the ramcleaner-watch timer"
             if recent < 4
             else None
         )
