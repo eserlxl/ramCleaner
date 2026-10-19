@@ -120,7 +120,7 @@ Neither mode touches `history.json`.
 
 ## State files
 
-By default, state files live in `$XDG_STATE_HOME/ramcleaner/` when `XDG_STATE_HOME` is set and non-empty, or `~/.local/state/ramcleaner/` otherwise. Passing `--history-file PATH` places `ignored.json` and `watch.lock` in `PATH`'s parent directory.
+By default, state files live in `$XDG_STATE_HOME/ramcleaner/` when `XDG_STATE_HOME` is set and non-empty, or `~/.local/state/ramcleaner/` otherwise. Passing `--history-file PATH` places `ignored.json` and `watch.lock` in `PATH`'s parent directory. `history.json` and `ignored.json` are written with mode 0600 because `ignored.json` holds command lines.
 
 | File | Written by | Purpose |
 | --- | --- | --- |

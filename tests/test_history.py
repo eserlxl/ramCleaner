@@ -4,13 +4,19 @@ from __future__ import annotations
 import io
 import json
 import os
+import stat
 import tempfile
 import unittest
 from contextlib import redirect_stderr
 from pathlib import Path
 from unittest.mock import patch
 
-from ramcleaner.history import append_scan, default_history_path, load_history
+from ramcleaner.history import (
+    append_scan,
+    default_history_path,
+    load_history,
+    write_json_atomic,
+)
 
 
 class HistoryTest(unittest.TestCase):
@@ -126,6 +132,21 @@ class HistoryTest(unittest.TestCase):
                         self.assertEqual(load_history(path), [])
                     self.assertEqual(len(stderr.getvalue().splitlines()), 1)
                     self.assertIn("Warning:", stderr.getvalue())
+
+    def test_write_json_atomic_mode_0600_despite_umask(self) -> None:
+        previous = os.umask(0o022)
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                new_path = Path(tmp) / "history.json"
+                write_json_atomic(new_path, [])
+                self.assertEqual(stat.S_IMODE(new_path.stat().st_mode), 0o600)
+                existing = Path(tmp) / "ignored.json"
+                existing.write_text("{}", encoding="utf-8")
+                existing.chmod(0o644)
+                write_json_atomic(existing, {})
+                self.assertEqual(stat.S_IMODE(existing.stat().st_mode), 0o600)
+        finally:
+            os.umask(previous)
 
     def test_default_state_path(self) -> None:
         with patch.dict(os.environ, {"XDG_STATE_HOME": "/fixture/state"}):
