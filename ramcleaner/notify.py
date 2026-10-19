@@ -19,7 +19,10 @@ def _spawn_dialog(argv: Sequence[str], timeout_s: float) -> subprocess.Completed
     # Without a display zenity exits 1, which would read as a cancel and hide nothing.
     if not (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")):
         raise OSError("no display")
-    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, text=True)
+    # zenity writes GTK warnings to stderr; they are not part of watch's output.
+    proc = subprocess.Popen(
+        argv, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
+    )
     try:
         stdout, _ = proc.communicate(timeout=timeout_s)
     except subprocess.TimeoutExpired:
@@ -30,6 +33,7 @@ def _spawn_dialog(argv: Sequence[str], timeout_s: float) -> subprocess.Completed
 
 
 def run_hide_dialog(
+    finding: Finding,
     remaining_s: float,
     runner: Callable[[Sequence[str], float], subprocess.CompletedProcess[str]] | None = None,
 ) -> tuple[str, str | None]:
@@ -37,9 +41,17 @@ def run_hide_dialog(
     # zenity treats --timeout=0 as no timeout and would outlive the ask deadline.
     if seconds < 1:
         return "timeout", None
+    # zenity renders --text as Pango markup; a cgroup label must stay literal.
+    text = html.escape(
+        f"Hide {finding.owner_label} "
+        f"({format_size(finding.rss_kb + finding.swap_kb)}) for:",
+        quote=False,
+    )
     argv = [
         "zenity",
         "--forms",
+        "--title=ramCleaner",
+        f"--text={text}",
         "--add-combo=Hide for",
         "--combo-values=" + "|".join(_HIDE_CHOICES),
         f"--timeout={seconds}",
@@ -92,7 +104,7 @@ class NotifySend:
     def ask(
         self, findings: Sequence[Finding], timeout_s: int
     ) -> dict[str, str]:
-        running: list[tuple[str, subprocess.Popen[str]]] = []
+        running: list[tuple[Finding, subprocess.Popen[str]]] = []
         answers: dict[str, str] = {}
         warning: str | None = None
         dialog_warning: str | None = None
@@ -122,10 +134,11 @@ class NotifySend:
                 if warning is None:
                     warning = f"Warning: notify-send unavailable: {exc}"
             else:
-                running.append((finding.key, proc))
+                running.append((finding, proc))
 
         deadline = time.monotonic() + timeout_s
-        for key, proc in running:
+        for finding, proc in running:
+            key = finding.key
             remaining = max(0.0, deadline - time.monotonic())
             try:
                 stdout, _ = proc.communicate(timeout=remaining)
@@ -142,6 +155,7 @@ class NotifySend:
                 answer = (stdout or "").strip()
                 if answer == "hide":
                     token, hide_warning = run_hide_dialog(
+                        finding,
                         max(0.0, deadline - time.monotonic()),
                         self._dialog_runner,
                     )

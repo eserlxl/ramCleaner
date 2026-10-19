@@ -51,7 +51,7 @@ From the checkout shell:
 ./bin/ramcleaner watch --history-file /tmp/ramcleaner-trial/history.json
 ```
 
-Click **Hide...** on the notification whose PIDs are the four sleepers, then choose **24 hours**. The dialog lists **1 hour**, **6 hours**, **24 hours**, and **Until reboot**. Click **Later** on any other notification from this run. **Later** records nothing, so a later timer run asks again. Cancelling the Hide dialog or closing it also records nothing. **Stop** sends `SIGTERM` to the PIDs named on that notification; the trial uses **Stop** only on the next scan, and only for those four PIDs. `watch` holds `watch.lock` until every notification in the run is answered, including the Hide dialog, or until `ask_timeout_minutes` (default 10) elapses. The dialog's timeout is the time still left in that wait.
+Click **Hide...** on the notification whose PIDs are the four sleepers, then choose **24 hours**. The dialog is titled ramCleaner, names that finding and its size, and lists **1 hour**, **6 hours**, **24 hours**, and **Until reboot**. Click **Later** on any other notification from this run. **Later** records nothing, so a later timer run asks again. Cancelling the Hide dialog or closing it also records nothing. **Stop** sends `SIGTERM` to the PIDs named on that notification; the trial uses **Stop** only on the next scan, and only for those four PIDs. `watch` holds `watch.lock` until every notification in the run is answered, including the Hide dialog, or until `ask_timeout_minutes` (default 10) elapses. The dialog's timeout is the time still left in that wait.
 
 After that `watch` exits, list the suppression and clear it:
 

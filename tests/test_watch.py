@@ -624,6 +624,8 @@ class WatchTest(unittest.TestCase):
         zenity_argv = [
             "zenity",
             "--forms",
+            "--title=ramCleaner",
+            "--text=Hide org.kde.yakuake tab 850422 (1.6 GB) for:",
             "--add-combo=Hide for",
             "--combo-values=1 hour|6 hours|24 hours|Until reboot",
             "--timeout=600",
@@ -1240,11 +1242,69 @@ class NotifySendTest(unittest.TestCase):
             [
                 "zenity",
                 "--forms",
+                "--title=ramCleaner",
+                "--text=Hide org.kde.yakuake (768 MB) for:",
                 "--add-combo=Hide for",
                 "--combo-values=1 hour|6 hours|24 hours|Until reboot",
                 "--timeout=300",
             ],
         )
+
+    def test_hide_dialogs_name_each_finding(self) -> None:
+        first = self._finding("k1")
+        second = Finding(
+            key="k2",
+            rule="other-user",
+            owner_label="clamav-daemon.service",
+            pids=(20,),
+            rss_kb=600 * 1024,
+            swap_kb=0,
+            reason="information only, not stopped",
+        )
+        texts: list[str] = []
+
+        def fake_popen(argv, *, stdout=None, text=None):
+            return _FakePopen(argv, stdout_text="hide\n")
+
+        def runner(argv, timeout_s):
+            texts.append(next(arg for arg in argv if arg.startswith("--text=")))
+            return subprocess.CompletedProcess(argv, 0, "1 hour\n", "")
+
+        with patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen):
+            answers = NotifySend(dialog_runner=runner).ask([first, second], 30)
+
+        self.assertEqual(answers, {"k1": "1 hour", "k2": "1 hour"})
+        self.assertEqual(
+            texts,
+            [
+                "--text=Hide org.kde.yakuake (768 MB) for:",
+                "--text=Hide clamav-daemon.service (600 MB) for:",
+            ],
+        )
+
+    def test_hide_dialog_escapes_markup_in_the_label(self) -> None:
+        finding = Finding(
+            key="k",
+            rule="other-user",
+            owner_label="<b>clamav</b>",
+            pids=(1,),
+            rss_kb=1024,
+            swap_kb=0,
+            reason="information only, not stopped",
+        )
+        seen: list[str] = []
+
+        def fake_popen(argv, *, stdout=None, text=None):
+            return _FakePopen(argv, stdout_text="hide\n")
+
+        def runner(argv, timeout_s):
+            seen.extend(argv)
+            return subprocess.CompletedProcess(argv, 0, "1 hour\n", "")
+
+        with patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen):
+            NotifySend(dialog_runner=runner).ask([finding], 30)
+
+        self.assertIn("--text=Hide &lt;b&gt;clamav&lt;/b&gt; (1 MB) for:", seen)
 
     def test_hide_dialog_without_a_display_falls_back_instead_of_cancelling(self) -> None:
         environ = {k: v for k, v in os.environ.items() if k not in ("DISPLAY", "WAYLAND_DISPLAY")}
@@ -1252,7 +1312,7 @@ class NotifySendTest(unittest.TestCase):
             patch.dict(os.environ, environ, clear=True),
             patch("ramcleaner.notify.subprocess.Popen") as popen,
         ):
-            token, warning = run_hide_dialog(5.0)
+            token, warning = run_hide_dialog(self._finding(), 5.0)
 
         popen.assert_not_called()
         self.assertEqual(token, "fallback")
@@ -1264,7 +1324,7 @@ class NotifySendTest(unittest.TestCase):
         def runner(argv, timeout_s):
             raise AssertionError("zenity started")
 
-        self.assertEqual(run_hide_dialog(0.4, runner), ("timeout", None))
+        self.assertEqual(run_hide_dialog(self._finding(), 0.4, runner), ("timeout", None))
 
     def test_missing_zenity_warns_once_for_every_hide(self) -> None:
         findings = [self._finding("k1"), self._finding("k2")]
@@ -1291,7 +1351,8 @@ class NotifySendTest(unittest.TestCase):
     def test_hide_dialog_kills_zenity_when_the_ask_time_runs_out(self) -> None:
         created: list[_FakePopen] = []
 
-        def fake_popen(argv, *, stdout=None, text=None):
+        def fake_popen(argv, *, stdout=None, stderr=None, text=None):
+            self.assertIs(stderr, subprocess.DEVNULL)
             proc = _FakePopen(argv, expire_on_first_communicate=True)
             created.append(proc)
             return proc
@@ -1300,7 +1361,7 @@ class NotifySendTest(unittest.TestCase):
             patch.dict(os.environ, {"WAYLAND_DISPLAY": "wayland-test"}),
             patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen),
         ):
-            token, warning = run_hide_dialog(5.0)
+            token, warning = run_hide_dialog(self._finding(), 5.0)
 
         self.assertEqual((token, warning), ("timeout", None))
         self.assertEqual(len(created), 1)
