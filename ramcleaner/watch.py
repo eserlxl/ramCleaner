@@ -40,19 +40,44 @@ def format_stop_result(result: StopResult) -> str:
     return " ".join(parts)
 
 
+def _expiry(val: object) -> float | None:
+    if type(val) in (int, float) and math.isfinite(val):
+        return float(val)
+    return None
+
+
+def _boot_id_value(val: object) -> str | None:
+    if isinstance(val, dict) and set(val) == {"boot_id"} and isinstance(val["boot_id"], str):
+        return val["boot_id"]
+    return None
+
+
 def _valid_ignored(data: object) -> bool:
     return isinstance(data, dict) and all(
-        isinstance(key, str) and type(val) in (int, float) and math.isfinite(val)
+        isinstance(key, str) and (_expiry(val) is not None or _boot_id_value(val) is not None)
         for key, val in data.items()
     )
 
 
-def load_ignored(path: str | Path) -> dict[str, float]:
+def _active(val: float | dict[str, str], now: float, boot_id: str | None) -> bool:
+    if isinstance(val, dict):
+        return val["boot_id"] == boot_id
+    return val > now
+
+
+def load_ignored(path: str | Path) -> dict[str, float | dict[str, str]]:
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         if not _valid_ignored(data):
             raise ValueError("invalid ignored entries")
-        return {key: float(val) for key, val in data.items()}
+        loaded: dict[str, float | dict[str, str]] = {}
+        for key, val in data.items():
+            boot_id = _boot_id_value(val)
+            if boot_id is not None:
+                loaded[key] = {"boot_id": boot_id}
+            else:
+                loaded[key] = float(val)
+        return loaded
     except FileNotFoundError:
         return {}
     except (OSError, ValueError, OverflowError) as exc:
@@ -60,8 +85,13 @@ def load_ignored(path: str | Path) -> dict[str, float]:
         return {}
 
 
-def save_ignored(path: str | Path, ignored: dict[str, float], now: float) -> None:
-    active = {key: until for key, until in ignored.items() if until > now}
+def save_ignored(
+    path: str | Path,
+    ignored: dict[str, float | dict[str, str]],
+    now: float,
+    boot_id: str | None = None,
+) -> None:
+    active = {key: val for key, val in ignored.items() if _active(val, now, boot_id)}
     write_json_atomic(path, active)
 
 
@@ -121,14 +151,16 @@ def run_watch(
 
         ignored_path = state_dir / "ignored.json"
         ignored = load_ignored(ignored_path)
-        has_expired = any(until <= stamp for until in ignored.values())
+        has_expired = any(not _active(val, stamp, boot_id) for val in ignored.values())
         unsuppressed = [
-            finding for finding in findings if ignored.get(finding.key, 0.0) <= stamp
+            finding
+            for finding in findings
+            if not _active(ignored.get(finding.key, 0.0), stamp, boot_id)
         ]
 
         if not unsuppressed:
             if has_expired:
-                save_ignored(ignored_path, ignored, stamp)
+                save_ignored(ignored_path, ignored, stamp, boot_id)
             return 0
 
         for finding in unsuppressed:
@@ -157,6 +189,6 @@ def run_watch(
                 suppressed_any = True
 
         if suppressed_any or has_expired:
-            save_ignored(ignored_path, ignored, stamp)
+            save_ignored(ignored_path, ignored, stamp, boot_id)
 
         return exit_code

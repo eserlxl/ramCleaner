@@ -84,6 +84,10 @@ with an id, the processes involved, their RSS and swap, and a one-line reason.
    they stay `zombie:<pid>:<start_ticks>` and `growth:<pid>:<start_ticks>`. Idle-clones keys name an
    owner cgroup and command and stay independent of the boot. An `ignored.json` entry in the
    previous zombie or growth form stops matching and expires, so the finding is asked once more.
+   Each `ignored.json` value is either a number (an expiry timestamp) or an object
+   `{"boot_id": "<id>"}`. A number hides the finding until that time. A boot-id object hides it
+   while the current boot id equals `<id>`, and is dropped on the next save after the boot id
+   changes. A file that stores only numbers loads unchanged.
 
 Processes in the protected list are never proposed: pid 1, the user's systemd manager, the
 session compositor and shell (`kwin_wayland`, `plasmashell`, `ksmserver`), and ramCleaner itself.
@@ -121,8 +125,9 @@ Stopping is per finding and only after approval.
   finding's processes and asks again), then stops the approved ones. Refuses with exit 2 if stdin is
   not a tty; exits 0 when nothing is approved or every approved stop leaves no survivors, and 1 if
   any survivor remains. Prints the same short-history note as `report`.
-- `ramcleaner ignored [--clear]` — lists the findings `watch` has suppressed in `ignored.json`, or
-  with `--clear` empties the file under `watch.lock` so the next run asks again.
+- `ramcleaner ignored [--clear]` — lists the findings `watch` has suppressed in `ignored.json`
+  (`until <time>` for a numeric expiry, `until reboot` for a boot-id entry), or with `--clear`
+  empties the file under `watch.lock` so the next run asks again.
 - `ramcleaner watch` — one scan for the systemd user timer (`ramcleaner-watch.timer` and
   `ramcleaner-watch.service`, `Type=oneshot` with `TimeoutStartSec=infinity`); guarded by
   `watch.lock`, records history, and turns each new finding into a desktop notification with "Stop"

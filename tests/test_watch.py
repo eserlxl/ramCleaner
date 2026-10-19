@@ -22,7 +22,13 @@ from ramcleaner.history import load_history
 from ramcleaner.notify import NotifySend, _format_notification
 from ramcleaner.owner import resolve_owner
 from ramcleaner.procscan import read_boot_id
-from ramcleaner.watch import format_finding, format_stop_result, load_ignored, run_watch
+from ramcleaner.watch import (
+    format_finding,
+    format_stop_result,
+    load_ignored,
+    run_watch,
+    save_ignored,
+)
 from tests.fakeproc import build_tree, write_proc
 
 
@@ -276,6 +282,53 @@ class WatchTest(unittest.TestCase):
                 self.assertEqual(set(updated.keys()), {key})
                 self.assertEqual(updated[key], 1000.0 + 14400.0)
 
+    def test_boot_suppression_same_boot_other_boot_prune_and_mixed_round_trip(self) -> None:
+        _, owner_cgroup = resolve_owner(self.cgroup)
+        key = f"idle-clones:{owner_cgroup}:{('bun', '/opt/context-mode/start.mjs')}"
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        mixed = {key: {"boot_id": "boot-fixture"}, "kept:number": 9000.0}
+        self.ignored_file.write_text(json.dumps(mixed), encoding="utf-8")
+
+        notifier = _FakeNotifier("ignore")
+        with redirect_stdout(io.StringIO()):
+            rc = run_watch(self._args(), Config(), notifier=notifier, now=lambda: 1000.0)
+        self.assertEqual(rc, 0)
+        self.assertEqual(notifier.asked, [])
+        self.assertEqual(load_ignored(self.ignored_file), mixed)
+
+        save_ignored(self.ignored_file, load_ignored(self.ignored_file), 1000.0, "boot-fixture")
+        raw = json.loads(self.ignored_file.read_text(encoding="utf-8"))
+        self.assertEqual(raw[key], {"boot_id": "boot-fixture"})
+        self.assertEqual(raw["kept:number"], 9000.0)
+        self.assertEqual(load_ignored(self.ignored_file), mixed)
+
+        self.history_file.unlink(missing_ok=True)
+        self.ignored_file.write_text(
+            json.dumps({key: {"boot_id": "other-boot"}}),
+            encoding="utf-8",
+        )
+        notifier = _FakeNotifier("timeout")
+        with redirect_stdout(io.StringIO()):
+            rc = run_watch(self._args(), Config(), notifier=notifier, now=lambda: 2000.0)
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(notifier.asked), 1)
+        self.assertEqual(load_ignored(self.ignored_file), {})
+
+    def test_pruning_an_expired_entry_keeps_a_current_boot_entry(self) -> None:
+        _, owner_cgroup = resolve_owner(self.cgroup)
+        key = f"idle-clones:{owner_cgroup}:{('bun', '/opt/context-mode/start.mjs')}"
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        self.ignored_file.write_text(
+            json.dumps({key: {"boot_id": "boot-fixture"}, "expired:number": 500.0}),
+            encoding="utf-8",
+        )
+        notifier = _FakeNotifier("ignore")
+        with redirect_stdout(io.StringIO()):
+            rc = run_watch(self._args(), Config(), notifier=notifier, now=lambda: 1000.0)
+        self.assertEqual(rc, 0)
+        self.assertEqual(notifier.asked, [])
+        self.assertEqual(load_ignored(self.ignored_file), {key: {"boot_id": "boot-fixture"}})
+
     def test_malformed_ignored_warns_and_treats_as_empty(self) -> None:
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.ignored_file.write_text("{bad json", encoding="utf-8")
@@ -437,6 +490,37 @@ class WatchTest(unittest.TestCase):
         expected_line = f"idle-clones:tab(850422).scope  until {expected_iso}"
         self.assertEqual(stdout.getvalue().splitlines(), [expected_line])
         self.assertFalse(self.history_file.exists())
+
+    def test_ignored_listing_prints_until_reboot_for_current_boot(self) -> None:
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        now = 1000.0
+        active_until = now + 3600.0
+        self.ignored_file.write_text(
+            json.dumps(
+                {
+                    "idle-clones:same": {"boot_id": "boot-fixture"},
+                    "idle-clones:other": {"boot_id": "other-boot"},
+                    "idle-clones:timed": active_until,
+                }
+            ),
+            encoding="utf-8",
+        )
+        stdout = io.StringIO()
+        with (
+            patch("ramcleaner.cli.read_boot_id", return_value="boot-fixture"),
+            patch("ramcleaner.cli.time.time", return_value=now),
+            redirect_stdout(stdout),
+        ):
+            rc = main(["ignored", "--history-file", str(self.history_file)])
+        self.assertEqual(rc, 0)
+        expected_iso = datetime.fromtimestamp(active_until).isoformat(timespec="seconds")
+        self.assertEqual(
+            stdout.getvalue().splitlines(),
+            [
+                "idle-clones:same  until reboot",
+                f"idle-clones:timed  until {expected_iso}",
+            ],
+        )
 
     def test_ignored_listing_when_none_or_all_expired(self) -> None:
         stdout = io.StringIO()

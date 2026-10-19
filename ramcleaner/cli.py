@@ -185,13 +185,20 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         ignored = load_ignored(ignored_path)
         now = time.time()
-        active = {key: until for key, until in ignored.items() if until > now}
-        if not active:
+        boot_id = read_boot_id(args.proc_root)
+        lines: list[str] = []
+        for key, value in ignored.items():
+            if isinstance(value, dict):
+                if value["boot_id"] == boot_id:
+                    lines.append(f"{key}  until reboot")
+            elif value > now:
+                until_iso = datetime.fromtimestamp(value).isoformat(timespec="seconds")
+                lines.append(f"{key}  until {until_iso}")
+        if not lines:
             print("Suppressed findings: none")
             return 0
-        for key, until in active.items():
-            until_iso = datetime.fromtimestamp(until).isoformat(timespec="seconds")
-            print(f"{key}  until {until_iso}")
+        for line in lines:
+            print(line)
         return 0
 
     if args.command in ("report", "clean", "watch"):
