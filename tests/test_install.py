@@ -111,6 +111,7 @@ class InstallTest(unittest.TestCase):
     def test_per_user_prefix_installs_units_where_systemd_looks(self) -> None:
         home = "/home/someone"
         for prefix, unit_dir in ((f"{home}/.local", f"{home}/.local/share/systemd/user"),
+                                 (f"{home}/.local/", f"{home}/.local/share/systemd/user"),
                                  ("/usr", "/usr/lib/systemd/user")):
             with self.subTest(prefix=prefix):
                 result = subprocess.run(

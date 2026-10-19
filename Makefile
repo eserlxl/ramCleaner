@@ -3,7 +3,7 @@ PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 LIBDIR ?= $(PREFIX)/lib/ramcleaner
 # systemd searches $XDG_DATA_HOME/systemd/user for a per-user install, not ~/.local/lib.
-USERUNITDIR ?= $(if $(filter $(HOME)/.local,$(PREFIX)),$(PREFIX)/share/systemd/user,$(PREFIX)/lib/systemd/user)
+USERUNITDIR ?= $(if $(filter $(HOME)/.local,$(patsubst %/,%,$(PREFIX))),$(HOME)/.local/share/systemd/user,$(PREFIX)/lib/systemd/user)
 DESTDIR ?=
 
 PY_FILES := $(wildcard ramcleaner/*.py)
