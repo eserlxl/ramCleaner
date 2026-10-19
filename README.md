@@ -23,7 +23,7 @@ ramcleaner report
 
 ## Install
 
-Requires Linux with cgroup v2, Python 3.11+, and `notify-send` (from `libnotify`) for desktop notifications. Install into `~/.local` with `make install PREFIX=~/.local` or system-wide with `sudo make install PREFIX=/usr/local`.
+Requires Linux with cgroup v2, Python 3.11+, and `notify-send` (from `libnotify`) for desktop notifications. `zenity` is optional and supplies the Hide duration menu. Install into `~/.local` with `make install PREFIX=~/.local` or system-wide with `sudo make install PREFIX=/usr/local`.
 
 See [docs/installation.md](docs/installation.md) for `make` variables, systemd timer setup, and uninstall steps.
 
@@ -41,7 +41,7 @@ Interactively review and stop findings from a terminal:
 ramcleaner clean
 ```
 
-Or run `ramcleaner watch` periodically from the systemd user timer to receive desktop notifications with **Stop** and **Ignore** buttons:
+Or run `ramcleaner watch` periodically from the systemd user timer to receive desktop notifications with **Stop**, **Later**, and **Hide...** buttons:
 
 ```sh
 systemctl --user daemon-reload
@@ -62,7 +62,7 @@ systemctl --user enable --now ramcleaner-watch.timer
 | Document | Description |
 | --- | --- |
 | [docs/installation.md](docs/installation.md) | Requirements, `make` variables and targets, systemd user timer setup, and uninstall. |
-| [docs/trial.md](docs/trial.md) | Desktop trial of report, clean, and notification Stop/Ignore from a checkout, without the default state directory. |
+| [docs/trial.md](docs/trial.md) | Desktop trial of report, clean, and notification Stop, Later, and Hide from a checkout, without the default state directory. |
 | [docs/configuration.md](docs/configuration.md) | `config.toml` path, all configuration keys, types, defaults, and `stop_rules` examples. |
 | [docs/cli-reference.md](docs/cli-reference.md) | Subcommands, options, state files (`history.json`, `ignored.json`, `watch.lock`), and exit statuses. |
 

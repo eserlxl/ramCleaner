@@ -95,6 +95,9 @@ def save_ignored(
     write_json_atomic(path, active)
 
 
+_HIDE_HOURS = {"1 hour": 1, "6 hours": 6, "24 hours": 24}
+
+
 def run_watch(
     args_like: Any,
     config: Config,
@@ -180,11 +183,25 @@ def run_watch(
                 notifier.inform(summary, format_stop_result(result))
                 if result.still_alive:
                     exit_code = 1
+            elif answer == "later":
+                print(f"{finding.owner_label}: later, will ask again")
             elif answer == "timeout":
                 print(f"{finding.owner_label}: no answer, will ask again")
             elif answer == "unavailable":
                 print(f"{finding.owner_label}: notification unavailable, will ask again")
+            elif answer == "cancel":
+                print(f"{finding.owner_label}: hide cancelled, will ask again")
+            elif answer == "Until reboot":
+                if boot_id is None:
+                    print(f"{finding.owner_label}: no boot id, will ask again")
+                else:
+                    ignored[finding.key] = {"boot_id": boot_id}
+                    suppressed_any = True
+            elif answer in _HIDE_HOURS:
+                ignored[finding.key] = stamp + _HIDE_HOURS[answer] * 3600
+                suppressed_any = True
             else:
+                # Dismissal, a missing or failed zenity, or any other answer.
                 ignored[finding.key] = stamp + config.ignore_for_hours * 3600
                 suppressed_any = True
 

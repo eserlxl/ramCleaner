@@ -7,7 +7,8 @@ pkgbase = ramcleaner
 	arch = any
 	license = GPL-3.0-or-later
 	depends = python>=3.11
-	optdepends = libnotify: Stop/Ignore desktop notifications for ramcleaner watch
+	optdepends = libnotify: Stop/Later/Hide desktop notifications for ramcleaner watch
+	optdepends = zenity: Hide duration menu for ramcleaner watch
 	source = ramcleaner-0.1.0.tar.gz::https://github.com/eserlxl/ramCleaner/archive/refs/tags/v0.1.0.tar.gz
 	sha256sums = SKIP
 

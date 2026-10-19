@@ -1,10 +1,10 @@
 # Desktop trial
 
-This guide runs ramCleaner from a git checkout and exercises the notification **Stop** and **Ignore** actions on purpose-built idle processes. It does not use a real workload and does not enable `ramcleaner-watch.timer`.
+This guide runs ramCleaner from a git checkout and exercises the notification **Stop**, **Later**, and **Hide...** actions on purpose-built idle processes. It does not use a real workload and does not enable `ramcleaner-watch.timer`.
 
 Every ramCleaner command below passes `--history-file /tmp/ramcleaner-trial/history.json`. `history.json`, `ignored.json`, and `watch.lock` are created only in that directory. The default state directory (`$XDG_STATE_HOME/ramcleaner`, or `~/.local/state/ramcleaner` when `XDG_STATE_HOME` is unset) is left untouched.
 
-`ramcleaner watch` needs a running notification daemon and `notify-send` with `--action` support. Requirements are listed in [installation.md](installation.md).
+`ramcleaner watch` needs a running notification daemon and `notify-send` with `--action` support. **Hide...** uses `zenity` for the duration menu; without `zenity` that button hides the finding for `ignore_for_hours` and prints one `Warning:` line. Requirements are listed in [installation.md](installation.md).
 
 ## Throwaway directory
 
@@ -29,7 +29,7 @@ From the repository root. At each `Stop it? [y/N/d] ` prompt, answer `n` so `cle
 
 `report` and `clean` do not create or modify the history file. `Findings: none` means `clean` does not prompt.
 
-## 2. Idle clones, Ignore, then Stop
+## 2. Idle clones, Hide, then Stop
 
 Open one dedicated terminal tab and leave it open. Idle-clones groups processes that share an owner cgroup and a command key (the executable plus the first argument that does not start with `-`). Each terminal tab is its own cgroup, so all four processes have to be started in that same tab.
 
@@ -51,7 +51,7 @@ From the checkout shell:
 ./bin/ramcleaner watch --history-file /tmp/ramcleaner-trial/history.json
 ```
 
-Click **Ignore** on the notification whose PIDs are the four sleepers. Click **Ignore** on any other notification from this run as well. **Stop** sends `SIGTERM` to the PIDs named on that notification; the trial uses **Stop** only on the next scan, and only for those four PIDs. `watch` holds `watch.lock` until every notification in the run is answered, or until `ask_timeout_minutes` (default 10) elapses.
+Click **Hide...** on the notification whose PIDs are the four sleepers, then choose **24 hours**. The dialog lists **1 hour**, **6 hours**, **24 hours**, and **Until reboot**. Click **Later** on any other notification from this run. **Later** records nothing, so a later timer run asks again. Cancelling the Hide dialog or closing it also records nothing. **Stop** sends `SIGTERM` to the PIDs named on that notification; the trial uses **Stop** only on the next scan, and only for those four PIDs. `watch` holds `watch.lock` until every notification in the run is answered, including the Hide dialog, or until `ask_timeout_minutes` (default 10) elapses. The dialog's timeout is the time still left in that wait.
 
 After that `watch` exits, list the suppression and clear it:
 
@@ -60,9 +60,9 @@ After that `watch` exits, list the suppression and clear it:
 ./bin/ramcleaner ignored --clear --history-file /tmp/ramcleaner-trial/history.json
 ```
 
-`ignored` prints one `idle-clones:` key and an expiry time. `--clear` empties the throwaway `ignored.json`. Clearing while `watch` still holds `watch.lock` prints `another watch is running` and exits `1`.
+`ignored` prints one `idle-clones:` key and an expiry time. **Until reboot** prints `until reboot` instead of a clock time. `--clear` empties the throwaway `ignored.json`. Clearing while `watch` still holds `watch.lock` prints `another watch is running` and exits `1`.
 
-Run `watch` again. Click **Stop** on the trial notification only. Click **Ignore** on any other notification.
+Run `watch` again. Click **Stop** on the trial notification only. Click **Later** on any other notification.
 
 ```sh
 ./bin/ramcleaner watch --history-file /tmp/ramcleaner-trial/history.json
@@ -75,7 +75,7 @@ Run `watch` again. Click **Stop** on the trial notification only. Click **Ignore
 When a step does not match this guide, record:
 
 - The finding line printed by `watch`, or the fact that it printed nothing before exiting.
-- Whether a notification appeared, which action was clicked, and any `Warning:` line (`notify-send` unavailable or failed, or `another watch is running`).
+- Whether a notification appeared, which action was clicked, the Hide duration if any, and any `Warning:` line (`notify-send` unavailable or failed, `zenity` unavailable or failed, or `another watch is running`).
 - The `ignored` listing before `--clear`.
 - After **Stop**: the follow-up text (`stopped=` and `still_alive=`) and whether the four PIDs were still alive.
 - When no idle-clones finding appears: state, RSS, and cgroup of the four PIDs, whether they were all started in one tab, and whether the shell running `watch` had `XDG_CONFIG_HOME` pointing at the throwaway config (`min_age_hours = 0`).

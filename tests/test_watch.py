@@ -19,7 +19,7 @@ from ramcleaner.cli import main
 from ramcleaner.config import Config
 from ramcleaner.detect import Finding, format_size
 from ramcleaner.history import load_history
-from ramcleaner.notify import NotifySend, _format_notification
+from ramcleaner.notify import NotifySend, _format_notification, run_hide_dialog
 from ramcleaner.owner import resolve_owner
 from ramcleaner.procscan import read_boot_id
 from ramcleaner.watch import (
@@ -184,6 +184,26 @@ class WatchTest(unittest.TestCase):
             proc_root=self.proc_root,
             cgroup_root=self.cgroup_root,
         )
+
+    def _run_hide(self, config: Config, stamp: float, runner) -> tuple[int, str, str]:
+        def fake_popen(argv, *, stdout=None, text=None):
+            return _FakePopen(argv, stdout_text="hide\n")
+
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with (
+            patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen),
+            patch("ramcleaner.notify.time.monotonic", return_value=1000.0),
+            redirect_stdout(stdout),
+            redirect_stderr(stderr),
+        ):
+            rc = run_watch(
+                self._args(),
+                config,
+                notifier=NotifySend(dialog_runner=runner),
+                now=lambda: stamp,
+            )
+        return rc, stdout.getvalue(), stderr.getvalue()
 
     def test_records_history_entry_per_run(self) -> None:
         notifier = _FakeNotifier("ignore")
@@ -425,6 +445,160 @@ class WatchTest(unittest.TestCase):
         self.assertEqual(stopper.calls, [])
         self.assertEqual(load_ignored(self.ignored_file), {})
         self.assertIn("notification unavailable, will ask again", stdout.getvalue())
+
+    def test_later_records_nothing_and_is_asked_again(self) -> None:
+        notifier = _FakeNotifier("later")
+        stopper = _FakeStopper()
+        stdout1 = io.StringIO()
+        stdout2 = io.StringIO()
+        with redirect_stdout(stdout1):
+            rc1 = run_watch(
+                self._args(),
+                Config(),
+                notifier=notifier,
+                stopper=stopper,
+                now=lambda: 1000.0,
+            )
+        with redirect_stdout(stdout2):
+            rc2 = run_watch(
+                self._args(),
+                Config(),
+                notifier=notifier,
+                stopper=stopper,
+                now=lambda: 1900.0,
+            )
+        self.assertEqual((rc1, rc2), (0, 0))
+        self.assertEqual(len(notifier.asked), 2)
+        self.assertEqual(stopper.calls, [])
+        self.assertFalse(self.ignored_file.exists())
+        self.assertEqual(load_ignored(self.ignored_file), {})
+        self.assertIn("later, will ask again", stdout1.getvalue())
+        self.assertIn("later, will ask again", stdout2.getvalue())
+
+    def test_hide_menu_records_choice_or_leaves_finding_open(self) -> None:
+        config = Config(ignore_for_hours=2)
+        stamp = 1000.0
+        _, owner_cgroup = resolve_owner(self.cgroup)
+        key = f"idle-clones:{owner_cgroup}:{('bun', '/opt/context-mode/start.mjs')}"
+        zenity_argv = [
+            "zenity",
+            "--forms",
+            "--add-combo=Hide for",
+            "--combo-values=1 hour|6 hours|24 hours|Until reboot",
+            "--timeout=600",
+        ]
+
+        def run_answered(respond):
+            self.ignored_file.unlink(missing_ok=True)
+            self.history_file.unlink(missing_ok=True)
+            seen: list[tuple[list[str], float]] = []
+
+            def runner(argv, timeout_s, respond=respond, seen=seen):
+                seen.append((list(argv), timeout_s))
+                return respond(argv, timeout_s)
+
+            rc, stdout, stderr = self._run_hide(config, stamp, runner)
+            return rc, stdout, stderr, seen
+
+        def chosen(text: str):
+            def respond(argv, timeout_s):
+                return subprocess.CompletedProcess(argv, 0, text, "")
+
+            return respond
+
+        expected = {
+            "1 hour\n": stamp + 3600,
+            "6 hours\n": stamp + 6 * 3600,
+            "24 hours\n": stamp + 24 * 3600,
+            "Until reboot\n": {"boot_id": "boot-fixture"},
+        }
+        for text, value in expected.items():
+            with self.subTest(choice=text.strip()):
+                rc, stdout, stderr, seen = run_answered(chosen(text))
+                self.assertEqual(rc, 0)
+                self.assertEqual(stderr, "")
+                self.assertNotIn("will ask again", stdout)
+                self.assertEqual(load_ignored(self.ignored_file), {key: value})
+                self.assertEqual(seen, [(zenity_argv, 600.0)])
+
+        def cancelled(argv, timeout_s):
+            return subprocess.CompletedProcess(argv, 1, "", "")
+
+        with self.subTest(choice="cancel"):
+            rc, stdout, stderr, seen = run_answered(cancelled)
+            self.assertEqual(rc, 0)
+            self.assertEqual(stderr, "")
+            self.assertIn("hide cancelled, will ask again", stdout)
+            self.assertFalse(self.ignored_file.exists())
+            self.assertEqual(seen, [(zenity_argv, 600.0)])
+
+        def closed(argv, timeout_s):
+            return subprocess.CompletedProcess(argv, 0, "\n", "")
+
+        with self.subTest(choice="closed"):
+            rc, stdout, stderr, _seen = run_answered(closed)
+            self.assertEqual(rc, 0)
+            self.assertEqual(stderr, "")
+            self.assertIn("hide cancelled, will ask again", stdout)
+            self.assertFalse(self.ignored_file.exists())
+
+        def zenity_timeout(argv, timeout_s):
+            return subprocess.CompletedProcess(argv, 5, "", "")
+
+        with self.subTest(choice="zenity-timeout"):
+            rc, stdout, stderr, _seen = run_answered(zenity_timeout)
+            self.assertEqual(rc, 0)
+            self.assertEqual(stderr, "")
+            self.assertIn("no answer, will ask again", stdout)
+            self.assertFalse(self.ignored_file.exists())
+
+        def expired(argv, timeout_s):
+            raise subprocess.TimeoutExpired(argv, timeout_s)
+
+        with self.subTest(choice="dialog-wait-expired"):
+            rc, stdout, stderr, _seen = run_answered(expired)
+            self.assertEqual(rc, 0)
+            self.assertEqual(stderr, "")
+            self.assertIn("no answer, will ask again", stdout)
+            self.assertFalse(self.ignored_file.exists())
+
+        def missing(argv, timeout_s):
+            raise FileNotFoundError("no zenity")
+
+        with self.subTest(choice="missing"):
+            rc, stdout, stderr, _seen = run_answered(missing)
+            self.assertEqual(rc, 0)
+            self.assertEqual(
+                stderr.splitlines(),
+                ["Warning: zenity unavailable, hiding for the default duration: no zenity"],
+            )
+            self.assertNotIn("will ask again", stdout)
+            self.assertEqual(load_ignored(self.ignored_file), {key: stamp + 2 * 3600})
+
+        def failed(argv, timeout_s):
+            return subprocess.CompletedProcess(argv, 2, "", "")
+
+        with self.subTest(choice="failed"):
+            rc, stdout, stderr, _seen = run_answered(failed)
+            self.assertEqual(rc, 0)
+            self.assertEqual(
+                stderr.strip(),
+                "Warning: zenity exited with status 2, hiding for the default duration",
+            )
+            self.assertEqual(load_ignored(self.ignored_file), {key: stamp + 2 * 3600})
+
+        boot = self.proc_root / "sys/kernel/random/boot_id"
+        saved_boot = boot.read_text(encoding="utf-8")
+        boot.unlink()
+        try:
+            with self.subTest(choice="until reboot without boot id"):
+                rc, stdout, stderr, _seen = run_answered(chosen("Until reboot\n"))
+                self.assertEqual(rc, 0)
+                self.assertEqual(stderr, "")
+                self.assertIn("no boot id, will ask again", stdout)
+                self.assertFalse(self.ignored_file.exists())
+        finally:
+            boot.write_text(saved_boot, encoding="utf-8")
 
     def test_held_lock_returns_0_without_scanning(self) -> None:
         self.state_dir.mkdir(parents=True, exist_ok=True)
@@ -782,7 +956,7 @@ class NotifySendTest(unittest.TestCase):
         f2 = self._finding("k2", (12, 13))
         f3 = self._finding("k3", (14, 15))
         created: list[_FakePopen] = []
-        outputs = iter(["stop\n", "ignore\n", ""])
+        outputs = iter(["stop\n", "later\n", ""])
 
         def fake_popen(argv, *, stdout=None, text=None):
             self.assertEqual(stdout, -1)
@@ -796,23 +970,24 @@ class NotifySendTest(unittest.TestCase):
         with patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen):
             answers = NotifySend().ask([f1, f2, f3], 300)
 
-        self.assertEqual(answers, {"k1": "stop", "k2": "ignore", "k3": ""})
+        self.assertEqual(answers, {"k1": "stop", "k2": "later", "k3": ""})
         self.assertEqual(len(created), 3)
         argv = created[0].argv
         self.assertEqual(
-            argv[:6],
+            argv[:7],
             [
                 "notify-send",
                 "--app-name=ramCleaner",
                 "--urgency=normal",
                 "--expire-time=360000",
                 "--action=stop=Stop",
-                "--action=ignore=Ignore",
+                "--action=later=Later",
+                "--action=hide=Hide...",
             ],
         )
-        self.assertEqual(argv[6], "org.kde.yakuake: 768 MB in 2 processes")
-        self.assertIn("2 idle copies of bun start.mjs, running for at least 6 h", argv[7])
-        self.assertIn("10, 11", argv[7])
+        self.assertEqual(argv[7], "org.kde.yakuake: 768 MB in 2 processes")
+        self.assertIn("2 idle copies of bun start.mjs, running for at least 6 h", argv[8])
+        self.assertIn("10, 11", argv[8])
 
     def test_ask_uses_shared_deadline_and_kills_timed_out_process(self) -> None:
         f1 = self._finding("k1", (10, 11))
@@ -855,6 +1030,102 @@ class NotifySendTest(unittest.TestCase):
         self.assertTrue(created[1].reaped)
         self.assertEqual(created[2].communicate_timeouts, [0.0])
         self.assertFalse(created[2].killed)
+
+    def test_hide_passes_remaining_ask_time_to_zenity(self) -> None:
+        finding = self._finding()
+        seen: dict[str, object] = {}
+
+        def fake_popen(argv, *, stdout=None, text=None):
+            return _FakePopen(argv, stdout_text="hide\n")
+
+        def runner(argv, timeout_s):
+            seen["argv"] = list(argv)
+            seen["timeout_s"] = timeout_s
+            return subprocess.CompletedProcess(argv, 0, "6 hours\n", "")
+
+        ticks = iter([100.0, 250.0, 400.0])
+        with (
+            patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen),
+            patch("ramcleaner.notify.time.monotonic", side_effect=lambda: next(ticks)),
+        ):
+            answers = NotifySend(dialog_runner=runner).ask([finding], 600)
+
+        self.assertEqual(answers, {"k1": "6 hours"})
+        self.assertEqual(seen["timeout_s"], 300.0)
+        self.assertEqual(
+            seen["argv"],
+            [
+                "zenity",
+                "--forms",
+                "--add-combo=Hide for",
+                "--combo-values=1 hour|6 hours|24 hours|Until reboot",
+                "--timeout=300",
+            ],
+        )
+
+    def test_hide_dialog_without_a_display_falls_back_instead_of_cancelling(self) -> None:
+        environ = {k: v for k, v in os.environ.items() if k not in ("DISPLAY", "WAYLAND_DISPLAY")}
+        with (
+            patch.dict(os.environ, environ, clear=True),
+            patch("ramcleaner.notify.subprocess.Popen") as popen,
+        ):
+            token, warning = run_hide_dialog(5.0)
+
+        popen.assert_not_called()
+        self.assertEqual(token, "fallback")
+        self.assertEqual(
+            warning, "Warning: zenity unavailable, hiding for the default duration: no display"
+        )
+
+    def test_hide_dialog_does_not_start_when_under_one_second(self) -> None:
+        def runner(argv, timeout_s):
+            raise AssertionError("zenity started")
+
+        self.assertEqual(run_hide_dialog(0.4, runner), ("timeout", None))
+
+    def test_missing_zenity_warns_once_for_every_hide(self) -> None:
+        findings = [self._finding("k1"), self._finding("k2")]
+
+        def fake_popen(argv, *, stdout=None, text=None):
+            return _FakePopen(argv, stdout_text="hide\n")
+
+        def runner(argv, timeout_s):
+            raise FileNotFoundError("no zenity")
+
+        stderr = io.StringIO()
+        with (
+            patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen),
+            redirect_stderr(stderr),
+        ):
+            answers = NotifySend(dialog_runner=runner).ask(findings, 30)
+
+        self.assertEqual(answers, {"k1": "fallback", "k2": "fallback"})
+        self.assertEqual(
+            stderr.getvalue().splitlines(),
+            ["Warning: zenity unavailable, hiding for the default duration: no zenity"],
+        )
+
+    def test_hide_dialog_kills_zenity_when_the_ask_time_runs_out(self) -> None:
+        created: list[_FakePopen] = []
+
+        def fake_popen(argv, *, stdout=None, text=None):
+            proc = _FakePopen(argv, expire_on_first_communicate=True)
+            created.append(proc)
+            return proc
+
+        with (
+            patch.dict(os.environ, {"WAYLAND_DISPLAY": "wayland-test"}),
+            patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen),
+        ):
+            token, warning = run_hide_dialog(5.0)
+
+        self.assertEqual((token, warning), ("timeout", None))
+        self.assertEqual(len(created), 1)
+        proc = created[0]
+        self.assertEqual(proc.argv[-1], "--timeout=5")
+        self.assertEqual(proc.communicate_timeouts[0], 5.0)
+        self.assertTrue(proc.killed)
+        self.assertTrue(proc.reaped)
 
     def test_missing_or_failing_notify_send_returns_unavailable_with_one_warning(self) -> None:
         findings = [self._finding("k1"), self._finding("k2")]

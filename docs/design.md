@@ -130,12 +130,16 @@ Stopping is per finding and only after approval.
   empties the file under `watch.lock` so the next run asks again.
 - `ramcleaner watch` — one scan for the systemd user timer (`ramcleaner-watch.timer` and
   `ramcleaner-watch.service`, `Type=oneshot` with `TimeoutStartSec=infinity`); guarded by
-  `watch.lock`, records history, and turns each new finding into a desktop notification with "Stop"
-  and "Ignore" actions (`notify-send --expire-time --action`), waiting against a shared
-  `ask_timeout_minutes` deadline (default 10 min). Timed-out notifications are killed, and like
-  unavailable notifications (`notify-send` could not show them) they neither stop nor suppress the finding (it is
-  asked again on the next run); only "Ignore" or a dismissal suppresses that finding's key in
-  `ignored.json` for `ignore_for_hours` (default 24 h).
+  `watch.lock`, records history, and turns each new finding into a desktop notification with "Stop",
+  "Later", and "Hide..." actions (`notify-send --expire-time --action`), waiting against a shared
+  `ask_timeout_minutes` deadline (default 10 min). "Later" records nothing, so the next run asks
+  again. "Hide..." opens a `zenity --forms` combo of 1 hour, 6 hours, 24 hours, and until reboot,
+  with `--timeout` bounded by the ask time still remaining; the choice becomes a numeric expiry or
+  a boot-id entry. Cancelling or closing that dialog records nothing. Timed-out notifications are
+  killed, and like unavailable notifications (`notify-send` could not show them) they neither stop
+  nor suppress the finding (it is asked again on the next run). Dismissing the notification
+  suppresses that finding's key in `ignored.json` for `ignore_for_hours` (default 24 h). Without
+  `zenity`, "Hide..." does the same and prints one `Warning:` line.
 
 `bin/ramcleaner` locates the package in `../lib/ramcleaner` when installed via `Makefile` or in the
 repository root when run from a checkout.

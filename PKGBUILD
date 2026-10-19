@@ -7,7 +7,8 @@ arch=('any')
 url="https://github.com/eserlxl/ramCleaner"
 license=('GPL-3.0-or-later')
 depends=('python>=3.11')
-optdepends=('libnotify: Stop/Ignore desktop notifications for ramcleaner watch')
+optdepends=('libnotify: Stop/Later/Hide desktop notifications for ramcleaner watch'
+            'zenity: Hide duration menu for ramcleaner watch')
 install=ramcleaner.install
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 # Pinned sha256 of the v$pkgver release tarball. The tarball holds this file,
