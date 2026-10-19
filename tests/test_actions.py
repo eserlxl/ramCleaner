@@ -387,6 +387,136 @@ class ActionsTest(unittest.TestCase):
         self.assertEqual(result.still_alive, ())
         self.assertEqual(result.skipped, ())
 
+    def _assert_stop_partition(self, result: StopResult) -> None:
+        skipped_pids = {pid for pid, _reason in result.skipped}
+        self.assertTrue(set(result.stopped).isdisjoint(result.still_alive))
+        self.assertTrue(set(result.stopped).isdisjoint(skipped_pids))
+        self.assertTrue(set(result.still_alive).isdisjoint(skipped_pids))
+        self.assertEqual(sorted(self.closed_tokens), sorted(self.opened_tokens))
+
+    def test_force_skips_cmdline_change_as_pid_reused(self) -> None:
+        self.ignore_sigterm.update({10, 11})
+
+        def send(token: int, sig: int) -> None:
+            self.fake_send_signal(token, sig)
+            if sig == signal.SIGTERM and self.token_to_pid[token] == 10:
+                write_proc(self.proc_root, {**self.specs[0], "cmdline": ("/bin/other",)})
+
+        result = stop_finding(
+            self.finding,
+            Config(term_timeout=1),
+            proc_root=self.proc_root,
+            force=True,
+            pidfd_open=self.fake_pidfd_open,
+            send_signal=send,
+            close=self.fake_close,
+            run=self.fake_run,
+            sleep=self.fake_sleep,
+            monotonic=self.fake_monotonic,
+        )
+        self.assertEqual(result.method, "SIGTERM+SIGKILL")
+        self.assertEqual(result.stopped, (11,))
+        self.assertEqual(result.still_alive, ())
+        self.assertEqual(result.skipped, ((10, "pid reused"),))
+        self.assertEqual(
+            self.signals,
+            [
+                (10, signal.SIGTERM),
+                (11, signal.SIGTERM),
+                (11, signal.SIGKILL),
+            ],
+        )
+        self._assert_stop_partition(result)
+
+    def test_force_skips_comm_that_became_protected(self) -> None:
+        self.ignore_sigterm.update({10, 11})
+
+        def send(token: int, sig: int) -> None:
+            self.fake_send_signal(token, sig)
+            if sig == signal.SIGTERM and self.token_to_pid[token] == 10:
+                write_proc(self.proc_root, {**self.specs[0], "comm": "kwin_wayland"})
+
+        result = stop_finding(
+            self.finding,
+            Config(term_timeout=1),
+            proc_root=self.proc_root,
+            force=True,
+            pidfd_open=self.fake_pidfd_open,
+            send_signal=send,
+            close=self.fake_close,
+            run=self.fake_run,
+            sleep=self.fake_sleep,
+            monotonic=self.fake_monotonic,
+        )
+        self.assertEqual(result.stopped, (11,))
+        self.assertEqual(result.still_alive, ())
+        self.assertEqual(result.skipped, ((10, "protected"),))
+        self.assertNotIn((10, signal.SIGKILL), self.signals)
+        self.assertIn((11, signal.SIGKILL), self.signals)
+        self._assert_stop_partition(result)
+
+    def test_force_sigkill_permission_denied_skips_and_continues(self) -> None:
+        self.ignore_sigterm.update({10, 11})
+
+        def send(token: int, sig: int) -> None:
+            if sig == signal.SIGKILL and self.token_to_pid[token] == 10:
+                raise PermissionError(1, "Operation not permitted")
+            self.fake_send_signal(token, sig)
+
+        result = stop_finding(
+            self.finding,
+            Config(term_timeout=1),
+            proc_root=self.proc_root,
+            force=True,
+            pidfd_open=self.fake_pidfd_open,
+            send_signal=send,
+            close=self.fake_close,
+            run=self.fake_run,
+            sleep=self.fake_sleep,
+            monotonic=self.fake_monotonic,
+        )
+        self.assertEqual(result.method, "SIGTERM+SIGKILL")
+        self.assertEqual(result.stopped, (11,))
+        self.assertEqual(result.still_alive, ())
+        self.assertEqual(result.skipped, ((10, "not permitted"),))
+        self.assertEqual(
+            self.signals,
+            [
+                (10, signal.SIGTERM),
+                (11, signal.SIGTERM),
+                (11, signal.SIGKILL),
+            ],
+        )
+        self._assert_stop_partition(result)
+
+    def test_force_start_ticks_change_during_wait_stays_stopped(self) -> None:
+        self.ignore_sigterm.update({10, 11})
+
+        def send(token: int, sig: int) -> None:
+            self.fake_send_signal(token, sig)
+            if sig == signal.SIGTERM and self.token_to_pid[token] == 10:
+                write_proc(self.proc_root, {**self.specs[0], "start_ticks": 999})
+
+        result = stop_finding(
+            self.finding,
+            Config(term_timeout=1),
+            proc_root=self.proc_root,
+            force=True,
+            pidfd_open=self.fake_pidfd_open,
+            send_signal=send,
+            close=self.fake_close,
+            run=self.fake_run,
+            sleep=self.fake_sleep,
+            monotonic=self.fake_monotonic,
+        )
+        self.assertEqual(result.method, "SIGTERM+SIGKILL")
+        self.assertEqual(result.stopped, (10, 11))
+        self.assertEqual(result.still_alive, ())
+        self.assertEqual(result.skipped, ())
+        self.assertNotIn((10, signal.SIGKILL), self.signals)
+        self.assertIn((11, signal.SIGKILL), self.signals)
+        self._assert_stop_partition(result)
+
 
 if __name__ == "__main__":
     unittest.main()

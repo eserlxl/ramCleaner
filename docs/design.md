@@ -81,12 +81,18 @@ Stopping is per finding and only after approval.
   60 s timeout) without sending a signal.
 - Without a rule: SIGTERM to the listed pids, then poll `/proc/PID` every 0.2 s up to
   `term_timeout` (default 10 s) until each pid has exited (its `/proc/PID` directory is gone, its
-  `start_ticks` changed, or its state is `Z`) and report which pids are still alive. With an
-  explicit `--force`, send SIGKILL to the survivors and poll up to 2 s more.
+  `start_ticks` changed, or its state is `Z`) and report which pids are still alive. A `start_ticks`
+  change during that wait is an exit. With an explicit `--force`, post-grace re-check each survivor
+  and send SIGKILL only when `start_ticks` and cmdline still match the scan and the process is not
+  protected, then poll up to 2 s more. `PermissionError` on SIGTERM or SIGKILL skips that pid as not
+  permitted and continues with the remaining pids; that pid is neither stopped nor still alive.
 - Before sending any signal, a pidfd is opened for each pid and its `/proc/PID` entry is
   re-checked: same start time (`start_ticks`) and same cmdline as in the scan, and not protected.
-  Signals (`SIGTERM` and `--force` `SIGKILL`) are sent through that pidfd so a reused pid can never
-  be hit; a pid that vanished, was reused, or is protected has its pidfd closed and is skipped.
+  Signals (`SIGTERM` and `--force` `SIGKILL`) are sent through that pidfd. After the grace period
+  the same identity and protection are read again before SIGKILL; a `start_ticks` or cmdline
+  mismatch is skipped as pid reuse, and a protected comm is skipped as protected. A residual exec
+  window remains between that re-read and SIGKILL in which the same task can exec. A pid that
+  vanished, was reused, or is protected before the first signal has its pidfd closed and is skipped.
 
 ## Interfaces
 

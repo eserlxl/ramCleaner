@@ -180,15 +180,35 @@ def stop_finding(
             if force and survivors:
                 method = "SIGTERM+SIGKILL"
                 still_active: list[tuple[int, int]] = []
+                # Dropped here so a post-grace skip is neither stopped nor still alive.
+                # The pidfd stays in pidfds for the finally close.
+                dropped: set[int] = set()
                 for pid, start_ticks in survivors:
                     current = _read_proc(root, pid)
                     if current is None or current.state == "Z":
+                        continue
+                    scanned = scanned_by_pid[pid]
+                    if (
+                        current.start_ticks != scanned.start_ticks
+                        or current.cmdline != scanned.cmdline
+                    ):
+                        skipped.append((pid, "pid reused"))
+                        dropped.add(pid)
+                        continue
+                    if is_protected(current, config) or is_protected(scanned, config):
+                        skipped.append((pid, "protected"))
+                        dropped.add(pid)
                         continue
                     try:
                         send_signal(pidfds[pid], signal.SIGKILL)
                     except ProcessLookupError:
                         continue
+                    except PermissionError:
+                        skipped.append((pid, "not permitted"))
+                        dropped.add(pid)
+                        continue
                     still_active.append((pid, start_ticks))
+                targets = [proc for proc in targets if proc.pid not in dropped]
                 survivors = _wait_for_exit(root, still_active, 2.0, sleep, monotonic)
 
         alive_set = {pid for pid, _ in survivors}
