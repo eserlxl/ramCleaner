@@ -197,6 +197,27 @@ class ReportTest(unittest.TestCase):
                 self.assertEqual(error.exception.code, 2)
                 scan.assert_not_called()
 
+    def test_report_rejects_invalid_config_before_scanning(self) -> None:
+        config_file = self.root / "config" / "ramcleaner" / "config.toml"
+        config_file.parent.mkdir(parents=True)
+        for text, key in (
+            ("bogus = 1\n", "bogus"),
+            ("history_hours = 0\n", "history_hours"),
+            ('stop_rules = [["(", "true"]]\n', "stop_rules"),
+        ):
+            with self.subTest(key=key):
+                config_file.write_text(text, encoding="utf-8")
+                stderr = io.StringIO()
+                with (
+                    patch("ramcleaner.cli.scan_processes") as scan,
+                    redirect_stderr(stderr),
+                    self.assertRaises(SystemExit) as error,
+                ):
+                    main(["report"])
+                self.assertEqual(error.exception.code, 2)
+                self.assertIn(key, stderr.getvalue())
+                scan.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
