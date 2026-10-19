@@ -26,7 +26,7 @@ options:
                         /sys/fs/cgroup).
 ```
 
-`--proc-root` and `--cgroup-root` are also accepted after the subcommand name for test fixtures.
+`--proc-root` and `--cgroup-root` are also accepted after `report`, `clean` and `watch` for test fixtures.
 
 ## Subcommands
 
