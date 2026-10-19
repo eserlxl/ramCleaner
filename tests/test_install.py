@@ -172,7 +172,7 @@ class PackageVersionTest(unittest.TestCase):
     def test_pkgbuild_and_srcinfo_match_package_version(self) -> None:
         for name, pattern in (("PKGBUILD", r"^pkgver=(\S+)$"), (".SRCINFO", r"^\tpkgver = (\S+)$")):
             with self.subTest(file=name):
-                text = (REPO_ROOT / name).read_text(encoding="utf-8")
+                text = (REPO_ROOT / "aur" / name).read_text(encoding="utf-8")
                 found = re.findall(pattern, text, re.MULTILINE)
                 self.assertEqual(found, [ramcleaner.__version__])
 
@@ -189,7 +189,7 @@ class PackageVersionTest(unittest.TestCase):
             self.assertLessEqual(version_key(newest), version_key(ramcleaner.__version__))
 
     def test_pkgbuild_source_is_a_signed_tag(self) -> None:
-        text = (REPO_ROOT / "PKGBUILD").read_text(encoding="utf-8")
+        text = (REPO_ROOT / "aur" / "PKGBUILD").read_text(encoding="utf-8")
         source = re.search(r'^source=\("([^"]+)"\)$', text, re.MULTILINE)
         self.assertIsNotNone(source)
         self.assertTrue(source.group(1).endswith("#tag=v$pkgver?signed"))

@@ -45,7 +45,7 @@ sudo make install PREFIX=/usr/local
 
 ## Arch Linux package
 
-The repository ships a `PKGBUILD` for a `ramcleaner` package that installs into `/usr` (the user units go to `/usr/lib/systemd/user`). It is not on the AUR yet; [packaging.md](packaging.md) shows how to build it locally. The package does not enable the timer: each user enables it as shown below.
+The repository ships a `PKGBUILD` in `aur/` for a `ramcleaner` package that installs into `/usr` (the user units go to `/usr/lib/systemd/user`). It is not on the AUR yet. Once the signed release tag is published, `cd aur && makepkg -si` builds and installs it; before that, [packaging.md](packaging.md) shows how to build it locally. The package does not enable the timer: each user enables it as shown below.
 
 Import the maintainer key before building so makepkg can verify the signed tag:
 
