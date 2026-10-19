@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Minimum idle processes with the same owner and command before an idle-clones finding.
+# min_clones = 4
+
+# Minimum age in hours for a sleeping process to count as an idle clone.
+# min_age_hours = 6
+
+# Minimum combined RSS and swap in MiB for an idle-clone group.
+# min_group_mb = 1024
+
+# Hours of history kept for growth detection.
+# history_hours = 24
+
+# Minimum RSS and swap growth in MiB for a growth finding.
+# min_growth_mb = 512
+
+# Seconds to wait after SIGTERM or a stop rule before giving up.
+# term_timeout = 10
+
+# Hours to hide a finding after it is dismissed.
+# ignore_for_hours = 24
+
+# Minutes ramcleaner watch waits for notification actions.
+# ask_timeout_minutes = 10
+
+# Minimum RSS and swap in MiB before another user's owner is reported.
+# other_users_min_mb = 512
+
+# Send an information notification for other users' owners.
+# other_users_notify = true
+
+# Extra comm names that are never reported or stopped.
+# protected = []
+## protected = ["my-daemon"]
+
+# Pattern and command pairs that stop a match without a signal.
+# stop_rules = []
+## stop_rules = [["\\.codex/plugins/cache/context-mode/.*/start\\.mjs", "codex app-server daemon stop"]]

@@ -12,8 +12,9 @@ PY_FILES := $(wildcard ramcleaner/*.py)
 
 install:
 	@python3 -c 'import os, sys; exp = os.path.normpath(os.path.join(sys.argv[1], "..", "lib", "ramcleaner")); act = os.path.normpath(sys.argv[2]); sys.exit(0 if act == exp else f"Error: LIBDIR ({act}) must be {exp} relative to BINDIR ({sys.argv[1]})")' "$(BINDIR)" "$(LIBDIR)"
-	install -d "$(DESTDIR)$(BINDIR)" "$(DESTDIR)$(LIBDIR)/ramcleaner" "$(DESTDIR)$(USERUNITDIR)"
+	install -d "$(DESTDIR)$(BINDIR)" "$(DESTDIR)$(LIBDIR)/ramcleaner" "$(DESTDIR)$(USERUNITDIR)" "$(DESTDIR)$(PREFIX)/share/ramcleaner"
 	install -m 644 $(PY_FILES) "$(DESTDIR)$(LIBDIR)/ramcleaner/"
+	install -m 644 config.example.toml "$(DESTDIR)$(PREFIX)/share/ramcleaner/config.example.toml"
 	install -m 755 bin/ramcleaner "$(DESTDIR)$(BINDIR)/ramcleaner"
 	sed "s|@BINDIR@|$(BINDIR)|g" systemd/ramcleaner-watch.service > "$(DESTDIR)$(USERUNITDIR)/ramcleaner-watch.service"
 	chmod 644 "$(DESTDIR)$(USERUNITDIR)/ramcleaner-watch.service"
@@ -25,7 +26,9 @@ uninstall:
 	rm -rf "$(DESTDIR)$(LIBDIR)/ramcleaner/__pycache__"
 	rm -f "$(DESTDIR)$(BINDIR)/ramcleaner"
 	rm -f "$(DESTDIR)$(USERUNITDIR)/ramcleaner-watch.service" "$(DESTDIR)$(USERUNITDIR)/ramcleaner-watch.timer"
+	rm -f "$(DESTDIR)$(PREFIX)/share/ramcleaner/config.example.toml"
 	-rmdir "$(DESTDIR)$(LIBDIR)/ramcleaner" "$(DESTDIR)$(LIBDIR)" 2>/dev/null || true
+	-rmdir "$(DESTDIR)$(PREFIX)/share/ramcleaner"
 
 test:
 	python3 -B -m unittest discover -s tests

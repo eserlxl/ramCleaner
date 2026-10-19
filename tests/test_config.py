@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from dataclasses import fields
 from pathlib import Path
 
 from ramcleaner.config import Config, ConfigError, load_config
+
+_EXAMPLE = Path(__file__).resolve().parents[1] / "config.example.toml"
 
 
 class ConfigTest(unittest.TestCase):
@@ -150,6 +153,23 @@ class ConfigTest(unittest.TestCase):
             with self.assertRaises(ConfigError) as ctx:
                 load_config(cfg_path)
             self.assertIn("(", str(ctx.exception))
+
+    def test_example_uncommented_matches_defaults(self) -> None:
+        text = _EXAMPLE.read_text(encoding="utf-8")
+        self.assertEqual(load_config(_EXAMPLE), Config())
+        assignments: list[str] = []
+        for field in fields(Config):
+            found = [
+                line[2:]
+                for line in text.splitlines()
+                if line.startswith(f"# {field.name} = ")
+            ]
+            self.assertEqual(len(found), 1, field.name)
+            assignments.append(found[0])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text("\n".join(assignments) + "\n", encoding="utf-8")
+            self.assertEqual(load_config(path), Config())
 
     def test_invalid_stop_rules_command_raises_config_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -4,6 +4,13 @@
 
 ramCleaner reads `$XDG_CONFIG_HOME/ramcleaner/config.toml` when `XDG_CONFIG_HOME` is set and non-empty, or `~/.config/ramcleaner/config.toml` otherwise.
 
+`make install` places a commented example at `$(PREFIX)/share/ramcleaner/config.example.toml`. After `make install PREFIX=~/.local`, copy it into place:
+
+```sh
+mkdir -p ~/.config/ramcleaner
+cp ~/.local/share/ramcleaner/config.example.toml ~/.config/ramcleaner/config.toml
+```
+
 The file is optional and parsed as UTF-8 TOML with Python's `tomllib`. Every key has a default. Unknown keys, invalid TOML syntax, or values of the wrong type cause ramCleaner to exit with status `2` before scanning.
 
 ## Configuration keys

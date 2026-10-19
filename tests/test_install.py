@@ -72,6 +72,14 @@ class InstallTest(unittest.TestCase):
             self.assertEqual(stat.S_IMODE(service_file.stat().st_mode), 0o644)
             self.assertEqual(stat.S_IMODE(timer_file.stat().st_mode), 0o644)
 
+            example = destdir / "usr" / "share" / "ramcleaner" / "config.example.toml"
+            self.assertTrue(example.is_file())
+            self.assertEqual(stat.S_IMODE(example.stat().st_mode), 0o644)
+            self.assertEqual(
+                example.read_bytes(),
+                (REPO_ROOT / "config.example.toml").read_bytes(),
+            )
+
             service_text = service_file.read_text(encoding="utf-8")
             service_lines = [line.strip() for line in service_text.splitlines()]
             self.assertIn("Type=oneshot", service_lines)

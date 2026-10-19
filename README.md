@@ -18,6 +18,8 @@ ramCleaner finds processes that hold memory they no longer use (idle helper copi
 
 ```sh
 make install PREFIX=~/.local
+mkdir -p ~/.config/ramcleaner
+cp ~/.local/share/ramcleaner/config.example.toml ~/.config/ramcleaner/config.toml
 ramcleaner report
 ```
 

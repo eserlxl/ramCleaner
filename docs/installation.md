@@ -38,8 +38,8 @@ sudo make install PREFIX=/usr/local
 
 | Target | Action |
 | --- | --- |
-| `install` | Copies `ramcleaner/*.py` to `$(DESTDIR)$(LIBDIR)/ramcleaner/` (mode `644`), `bin/ramcleaner` to `$(DESTDIR)$(BINDIR)/ramcleaner` (mode `755`), and the two systemd user units to `$(DESTDIR)$(USERUNITDIR)/` (mode `644`) with `@BINDIR@` replaced by `$(BINDIR)`. |
-| `uninstall` | Removes the installed executable, package files, and systemd user units, then removes empty `LIBDIR` directories. |
+| `install` | Copies `ramcleaner/*.py` to `$(DESTDIR)$(LIBDIR)/ramcleaner/` (mode `644`), `bin/ramcleaner` to `$(DESTDIR)$(BINDIR)/ramcleaner` (mode `755`), `config.example.toml` to `$(DESTDIR)$(PREFIX)/share/ramcleaner/config.example.toml` (mode `644`), and the two systemd user units to `$(DESTDIR)$(USERUNITDIR)/` (mode `644`) with `@BINDIR@` replaced by `$(BINDIR)`. |
+| `uninstall` | Removes the installed executable, package files, example config, and systemd user units, then removes empty `LIBDIR` and `$(PREFIX)/share/ramcleaner` directories. |
 | `test` | Runs `python3 -B -m unittest discover -s tests`. |
 | `lint` | Runs `ruff check --target-version py311 ramcleaner tests bin/ramcleaner`, which also rejects syntax newer than Python 3.11. |
 
