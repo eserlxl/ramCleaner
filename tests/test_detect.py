@@ -285,6 +285,41 @@ class DetectTest(unittest.TestCase):
             second=zombies, history=tagged(previous, "other-boot"), boot_id=None)
         self.assertEqual(finding.rule, "zombie")
 
+    def test_pid_keys_are_scoped_to_boot(self) -> None:
+        proc = replace(self.procs[10], rss_kb=548 * 1024, swap_kb=64 * 1024)
+        parent = replace(self.procs[10], pid=20, comm="daemon")
+        grown = {10: proc}
+        zombies = {20: parent, 10: replace(self.procs[10], state="Z")}
+        growth_keys = {}
+        zombie_keys = {}
+        for boot_id in ("boot-a", "boot-b"):
+            growth = [{**entry, "boot_id": boot_id} for entry in self.growth_history()]
+            finding, = self.findings(second=grown, history=growth, boot_id=boot_id)
+            growth_keys[boot_id] = finding.key
+            previous = [{
+                "time": 999900, "procs": {}, "zombies": ["10:100"], "boot_id": boot_id,
+            }]
+            finding, = self.findings(second=zombies, history=previous, boot_id=boot_id)
+            zombie_keys[boot_id] = finding.key
+        self.assertEqual(growth_keys["boot-a"], "growth:boot-a:10:100")
+        self.assertEqual(growth_keys["boot-b"], "growth:boot-b:10:100")
+        self.assertNotEqual(growth_keys["boot-a"], growth_keys["boot-b"])
+        self.assertEqual(zombie_keys["boot-a"], "zombie:boot-a:20:100")
+        self.assertEqual(zombie_keys["boot-b"], "zombie:boot-b:20:100")
+        self.assertNotEqual(zombie_keys["boot-a"], zombie_keys["boot-b"])
+        finding, = self.findings(second=grown, history=self.growth_history(), boot_id=None)
+        self.assertEqual(finding.key, "growth:10:100")
+        finding, = self.findings(
+            second=zombies,
+            history=[{"time": 999900, "procs": {}, "zombies": ["10:100"]}],
+            boot_id=None,
+        )
+        self.assertEqual(finding.key, "zombie:20:100")
+        clone_a, = self.findings(boot_id="boot-a")
+        clone_b, = self.findings(boot_id="boot-b")
+        self.assertEqual(clone_a.key, clone_b.key)
+        self.assertTrue(clone_a.key.startswith("idle-clones:"))
+
 
 if __name__ == "__main__":
     unittest.main()

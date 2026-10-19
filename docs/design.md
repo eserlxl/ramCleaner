@@ -74,7 +74,11 @@ with an id, the processes involved, their RSS and swap, and a one-line reason.
    `$XDG_STATE_HOME/ramcleaner/history.json` (default `~/.local/state/ramcleaner/`), pruned to the
    window. When `/proc/sys/kernel/random/boot_id` is readable, growth and zombie persistence use
    only history entries from that boot; entries from another boot, or recorded without a boot id,
-   are ignored.
+   are ignored. When that boot id is known, zombie and growth suppression keys are
+   `zombie:<boot_id>:<pid>:<start_ticks>` and `growth:<boot_id>:<pid>:<start_ticks>`; without one
+   they stay `zombie:<pid>:<start_ticks>` and `growth:<pid>:<start_ticks>`. Idle-clones keys name an
+   owner cgroup and command and stay independent of the boot. An `ignored.json` entry in the
+   previous zombie or growth form stops matching and expires, so the finding is asked once more.
 
 Processes in the protected list are never proposed: pid 1, the user's systemd manager, the
 session compositor and shell (`kwin_wayland`, `plasmashell`, `ksmserver`), and ramCleaner itself.

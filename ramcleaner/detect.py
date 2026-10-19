@@ -116,8 +116,13 @@ def detect(
     for parent_pid, children in zombies.items():
         parent = eligible[parent_pid]
         owner, _ = resolve_owner(parent.cgroup)
+        # start_ticks counts from boot, so a known boot_id keeps the suppression on that boot.
+        if boot_id is None:
+            zombie_key = f"zombie:{parent.pid}:{parent.start_ticks}"
+        else:
+            zombie_key = f"zombie:{boot_id}:{parent.pid}:{parent.start_ticks}"
         findings.append(Finding(
-            key=f"zombie:{parent.pid}:{parent.start_ticks}",
+            key=zombie_key,
             rule="zombie",
             owner_label=owner.label,
             pids=(parent.pid,),
@@ -145,8 +150,12 @@ def detect(
             and not _is_browser_child(proc)
         ):
             owner, _ = resolve_owner(proc.cgroup)
+            if boot_id is None:
+                growth_key = f"growth:{identity}"
+            else:
+                growth_key = f"growth:{boot_id}:{identity}"
             findings.append(Finding(
-                key=f"growth:{identity}",
+                key=growth_key,
                 rule="growth",
                 owner_label=owner.label,
                 pids=(proc.pid,),
