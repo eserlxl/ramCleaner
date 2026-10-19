@@ -202,7 +202,12 @@ def group_by_owner(
             )
         )
 
-    usages = [_without_nested(u, usages) for u in usages]
+    # Inclusive cgroup counters contain every descendant. Reduce deepest-first
+    # so each ancestor subtracts a descendant's exclusive totals once.
+    reduced: list[OwnerUsage] = []
+    for usage in sorted(usages, key=lambda u: u.cgroup.count("/"), reverse=True):
+        reduced.append(_without_nested(usage, reduced))
+    usages = reduced
     usages.sort(key=lambda u: (-u.total_bytes, u.cgroup))
     return usages
 
