@@ -81,6 +81,86 @@ def run_hide_dialog(
     return "fallback", warning
 
 
+def run_details_dialog(
+    findings: Sequence[Finding],
+    remaining_s: float,
+    runner: Callable[[Sequence[str], float], subprocess.CompletedProcess[str]] | None = None,
+) -> tuple[set[str] | None, str | None]:
+    seconds = int(remaining_s)
+    # zenity treats --timeout=0 as no timeout and would outlive the ask deadline.
+    if seconds < 1:
+        return None, None
+    # Only --text is Pango markup. Checklist cells are plain, so escape the text
+    # and leave owner labels and reasons literal.
+    lines = ["Select processes to stop"]
+    stoppable: list[Finding] = []
+    for finding in findings:
+        if finding.rule == "other-user":
+            lines.append(
+                f"{finding.owner_label} {format_size(finding.rss_kb + finding.swap_kb)} "
+                "(another user, information only)"
+            )
+        else:
+            stoppable.append(finding)
+    text = html.escape("\n".join(lines), quote=False)
+    argv = [
+        "zenity",
+        "--list",
+        "--checklist",
+        "--title=ramCleaner",
+        f"--text={text}",
+        "--column=Stop",
+        "--column=#",
+        "--column=Owner",
+        "--column=Size",
+        "--column=Reason",
+        "--hide-column=2",
+        "--print-column=2",
+        "--separator=|",
+        "--width=800",
+        "--height=400",
+        f"--timeout={seconds}",
+        "--",
+    ]
+    for index, finding in enumerate(stoppable, start=1):
+        argv.extend(
+            [
+                "FALSE",
+                str(index),
+                finding.owner_label,
+                format_size(finding.rss_kb + finding.swap_kb),
+                finding.reason,
+            ]
+        )
+    try:
+        completed = (runner if runner is not None else _spawn_dialog)(argv, remaining_s)
+    except subprocess.TimeoutExpired:
+        return None, None
+    except OSError as exc:
+        return None, f"Warning: zenity unavailable, Details stopped nothing: {exc}"
+    if completed.returncode == 0:
+        selected: set[str] = set()
+        for part in (completed.stdout or "").split("|"):
+            token = part.strip()
+            if not token:
+                continue
+            try:
+                index = int(token)
+            except ValueError:
+                continue
+            if index < 1 or index > len(stoppable):
+                continue
+            selected.add(stoppable[index - 1].key)
+        return selected, None
+    if completed.returncode in (1, 5):
+        return None, None
+    warning = (
+        f"Warning: zenity exited with status {completed.returncode}, "
+        "Details stopped nothing"
+    )
+    return None, warning
+
+
 def _format_notification(finding: Finding) -> tuple[str, str]:
     summary = (
         f"{finding.owner_label}: {format_size(finding.rss_kb + finding.swap_kb)} "
@@ -123,6 +203,7 @@ class NotifySend:
                     "--action=stop=Stop",
                     "--action=later=Later",
                     "--action=hide=Hide...",
+                    "--action=details=Details...",
                 ]
             argv = [
                 *_BASE_ARGV,
@@ -146,9 +227,13 @@ class NotifySend:
         # A later notify-send can exit while an earlier one is still open;
         # reading in spawn order would delay that finding's Hide dialog.
         pending = running
+        # A finding stopped from Details must not apply its own popup answer later.
+        skip: set[str] = set()
         while pending:
             still: list[tuple[Finding, subprocess.Popen[str]]] = []
-            for finding, proc in pending:
+            for index, (finding, proc) in enumerate(pending):
+                if finding.key in skip:
+                    continue
                 if proc.poll() is None:
                     still.append((finding, proc))
                     continue
@@ -176,6 +261,28 @@ class NotifySend:
                         answers[key] = token
                         if hide_warning is not None and dialog_warning is None:
                             dialog_warning = hide_warning
+                    elif answer == "details":
+                        selected, details_warning = run_details_dialog(
+                            findings,
+                            max(0.0, deadline - time.monotonic()),
+                            self._dialog_runner,
+                        )
+                        if details_warning is not None and dialog_warning is None:
+                            dialog_warning = details_warning
+                        chosen = selected if selected is not None else set()
+                        for chosen_key in chosen:
+                            answers[chosen_key] = "stop"
+                        if key not in chosen:
+                            answers[key] = "later"
+                        for other, other_proc in (*still, *pending[index + 1 :]):
+                            if other.key not in chosen:
+                                continue
+                            # Reap the popup so its button cannot replace this stop.
+                            if other_proc.poll() is None:
+                                other_proc.kill()
+                            other_proc.communicate()
+                            skip.add(other.key)
+                        still = [item for item in still if item[0].key not in skip]
                     else:
                         answers[key] = answer
             pending = still

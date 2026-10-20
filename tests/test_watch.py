@@ -20,7 +20,12 @@ from ramcleaner.cli import main
 from ramcleaner.config import Config
 from ramcleaner.detect import Finding, format_size
 from ramcleaner.history import load_history
-from ramcleaner.notify import NotifySend, _format_notification, run_hide_dialog
+from ramcleaner.notify import (
+    NotifySend,
+    _format_notification,
+    run_details_dialog,
+    run_hide_dialog,
+)
 from ramcleaner.owner import resolve_owner
 from ramcleaner.procscan import read_boot_id
 from ramcleaner.watch import (
@@ -556,6 +561,7 @@ class WatchTest(unittest.TestCase):
             actions,
             ["--action=hide=Hide..."],
         )
+        self.assertNotIn("--action=details=Details...", created[0].argv)
         self.assertNotIn("--action=stop=Stop", created[0].argv)
         self.assertIn("systemd-journald.service", created[0].argv[-2])
         self.assertIn("information only, not stopped", created[0].argv[-1])
@@ -1178,7 +1184,7 @@ class NotifySendTest(unittest.TestCase):
         self.assertEqual(len(created), 3)
         argv = created[0].argv
         self.assertEqual(
-            argv[:7],
+            argv[:8],
             [
                 "notify-send",
                 "--app-name=ramCleaner",
@@ -1187,12 +1193,13 @@ class NotifySendTest(unittest.TestCase):
                 "--action=stop=Stop",
                 "--action=later=Later",
                 "--action=hide=Hide...",
+                "--action=details=Details...",
             ],
         )
-        self.assertEqual(argv[7], "--")
-        self.assertEqual(argv[8], "org.kde.yakuake: 768 MB in 2 processes")
-        self.assertIn("2 idle copies of bun start.mjs, running for at least 6 h", argv[9])
-        self.assertIn("10, 11", argv[9])
+        self.assertEqual(argv[8], "--")
+        self.assertEqual(argv[9], "org.kde.yakuake: 768 MB in 2 processes")
+        self.assertIn("2 idle copies of bun start.mjs, running for at least 6 h", argv[10])
+        self.assertIn("10, 11", argv[10])
 
     def test_ask_uses_shared_deadline_and_kills_timed_out_process(self) -> None:
         f1 = self._finding("k1", (10, 11))
@@ -1458,6 +1465,182 @@ class NotifySendTest(unittest.TestCase):
         self.assertEqual(proc.communicate_timeouts[0], 5.0)
         self.assertTrue(proc.killed)
         self.assertTrue(proc.reaped)
+
+    def test_details_argv_escapes_text_and_keeps_cells_literal(self) -> None:
+        other = Finding(
+            key="other",
+            rule="other-user",
+            owner_label="<b>&",
+            pids=(20,),
+            rss_kb=600 * 1024,
+            swap_kb=0,
+            reason="information only, not stopped",
+        )
+        stoppable = Finding(
+            key="k1",
+            rule="idle-clones",
+            owner_label="<b>&",
+            pids=(10,),
+            rss_kb=512 * 1024,
+            swap_kb=256 * 1024,
+            reason="because <b>&",
+        )
+        created: list[_FakePopen] = []
+        seen: list[list[str]] = []
+
+        def fake_popen(argv, *, stdout=None, text=None):
+            answer = "details\n" if "--action=details=Details..." in argv else "\n"
+            proc = _FakePopen(argv, stdout_text=answer)
+            created.append(proc)
+            return proc
+
+        def runner(argv, timeout_s):
+            seen.append(list(argv))
+            return subprocess.CompletedProcess(argv, 0, "1\n", "")
+
+        with (
+            patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen),
+            patch("ramcleaner.notify.time.monotonic", return_value=100.0),
+        ):
+            answers = NotifySend(dialog_runner=runner).ask([other, stoppable], 30)
+
+        self.assertEqual(answers, {"other": "", "k1": "stop"})
+        self.assertEqual(
+            [arg for arg in created[0].argv if arg.startswith("--action=")],
+            ["--action=hide=Hide..."],
+        )
+        self.assertEqual(len(seen), 1)
+        argv = seen[0]
+        self.assertEqual(
+            argv,
+            [
+                "zenity",
+                "--list",
+                "--checklist",
+                "--title=ramCleaner",
+                (
+                    "--text=Select processes to stop\n"
+                    "&lt;b&gt;&amp; 600 MB (another user, information only)"
+                ),
+                "--column=Stop",
+                "--column=#",
+                "--column=Owner",
+                "--column=Size",
+                "--column=Reason",
+                "--hide-column=2",
+                "--print-column=2",
+                "--separator=|",
+                "--width=800",
+                "--height=400",
+                "--timeout=30",
+                "--",
+                "FALSE",
+                "1",
+                "<b>&",
+                "768 MB",
+                "because <b>&",
+            ],
+        )
+        self.assertNotIn("<b>", argv[4])
+        cells = argv[argv.index("--") + 1 :]
+        self.assertNotIn("information only, not stopped", cells)
+        self.assertEqual(cells.count("FALSE"), 1)
+
+    def test_details_selection_stops_those_rows_and_kills_their_popups(self) -> None:
+        alpha = self._finding("k-alpha", (10,))
+        bravo = self._finding("k-bravo", (11,))
+        charlie = self._finding("k-charlie", (12,))
+        created: list[_FakePopen] = []
+
+        def fake_popen(argv, *, stdout=None, text=None):
+            if len(created) == 1:
+                proc = _FakePopen(argv, stdout_text="details\n")
+            elif len(created) == 2:
+                proc = _FakePopen(argv, stdout_text="later\n", finish_at=float("inf"))
+            else:
+                proc = _FakePopen(argv, stdout_text="later\n")
+            created.append(proc)
+            return proc
+
+        def runner(argv, timeout_s):
+            return subprocess.CompletedProcess(argv, 0, "2|3|9|nope\n", "")
+
+        def fail_if_waiting(seconds: float) -> None:
+            raise AssertionError("still waiting")
+
+        with (
+            patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen),
+            patch("ramcleaner.notify.time.sleep", side_effect=fail_if_waiting),
+        ):
+            answers = NotifySend(dialog_runner=runner).ask([alpha, bravo, charlie], 30)
+
+        self.assertEqual(
+            answers,
+            {"k-alpha": "later", "k-bravo": "stop", "k-charlie": "stop"},
+        )
+        self.assertFalse(created[0].killed)
+        self.assertFalse(created[1].killed)
+        self.assertTrue(created[2].killed)
+        self.assertTrue(created[2].reaped)
+
+    def test_details_cancel_answers_later_and_stops_nothing(self) -> None:
+        created: list[_FakePopen] = []
+
+        def fake_popen(argv, *, stdout=None, text=None):
+            answer = "details\n" if not created else "later\n"
+            proc = _FakePopen(argv, stdout_text=answer)
+            created.append(proc)
+            return proc
+
+        def runner(argv, timeout_s):
+            return subprocess.CompletedProcess(argv, 1, "1|2\n", "")
+
+        with patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen):
+            answers = NotifySend(dialog_runner=runner).ask(
+                [self._finding("k1"), self._finding("k2", (12,))],
+                30,
+            )
+
+        self.assertEqual(answers, {"k1": "later", "k2": "later"})
+        self.assertFalse(any(proc.killed for proc in created))
+
+    def test_details_timeout_answers_later_and_opens_nothing_under_one_second(self) -> None:
+        def fake_popen(argv, *, stdout=None, text=None):
+            return _FakePopen(argv, stdout_text="details\n")
+
+        def runner(argv, timeout_s):
+            raise subprocess.TimeoutExpired(argv, timeout_s)
+
+        stderr = io.StringIO()
+        with (
+            patch("ramcleaner.notify.subprocess.Popen", side_effect=fake_popen),
+            redirect_stderr(stderr),
+        ):
+            answers = NotifySend(dialog_runner=runner).ask([self._finding()], 30)
+
+        self.assertEqual(answers, {"k1": "later"})
+        self.assertEqual(stderr.getvalue(), "")
+
+        def fail_if_opened(argv, timeout_s):
+            raise AssertionError("zenity started")
+
+        self.assertEqual(run_details_dialog([self._finding()], 0.4, fail_if_opened), (None, None))
+        self.assertEqual(run_details_dialog([self._finding()], 5.0, runner), (None, None))
+
+        def status_five(argv, timeout_s):
+            return subprocess.CompletedProcess(argv, 5, "1\n", "")
+
+        self.assertEqual(run_details_dialog([self._finding()], 5.0, status_five), (None, None))
+
+        def missing(argv, timeout_s):
+            raise OSError("no zenity")
+
+        keys, warning = run_details_dialog([self._finding()], 5.0, missing)
+        self.assertIsNone(keys)
+        self.assertEqual(
+            warning,
+            "Warning: zenity unavailable, Details stopped nothing: no zenity",
+        )
 
     def test_missing_or_failing_notify_send_returns_unavailable_with_one_warning(self) -> None:
         findings = [self._finding("k1"), self._finding("k2")]

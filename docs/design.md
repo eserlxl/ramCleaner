@@ -132,19 +132,24 @@ Stopping is per finding and only after approval.
 - `ramcleaner watch` — one scan for the systemd user timer (`ramcleaner-watch.timer` and
   `ramcleaner-watch.service`, `Type=oneshot` with `TimeoutStartSec=infinity`); guarded by
   `watch.lock`, records history, and turns each new finding into a desktop notification with "Stop",
-  "Later", and "Hide..." actions (`notify-send --expire-time --action`), waiting against a shared
-  `ask_timeout_minutes` deadline (default 10 min). "Later" records nothing, so the next run asks
+  "Later", "Hide...", and "Details..." actions (`notify-send --expire-time --action`), waiting against
+  a shared `ask_timeout_minutes` deadline (default 10 min). "Later" records nothing, so the next run asks
   again. "Hide..." opens a `zenity --forms` combo of 1 hour, 6 hours, 24 hours, and until reboot,
   with `--timeout` bounded by the ask time still remaining; the choice becomes a numeric expiry or
-  a boot-id entry. Cancelling or closing that dialog records nothing. Timed-out notifications are
-  killed, and like unavailable notifications (`notify-send` could not show them) they neither stop
+  a boot-id entry. Cancelling or closing that dialog records nothing. "Details..." opens one
+  `zenity --list --checklist` of every stoppable finding in the run. Other-user warnings appear in
+  the dialog text only and are never rows. Ticked rows are stopped the same way as "Stop".
+  Cancelling, closing, or timing out the checklist stops nothing. A popup whose finding was stopped
+  from the checklist can stay on screen until closed; its buttons do nothing. Timed-out
+  notifications are killed, and like unavailable notifications (`notify-send` could not show them)
+  they neither stop
   nor suppress the finding (it is asked again on the next run). Dismissing the notification
   suppresses that finding's key in `ignored.json` for `ignore_for_hours` (default 24 h). Without
   `zenity`, "Hide..." does the same and prints one `Warning:` line. When `other_users_notify` is
   true (the default), each other user's owner at or above `other_users_min_mb` also becomes an
-  information notification keyed `other-user:<owner_cgroup>`, with only "Hide..." and no "Stop" or
-  "Later". `other_users_notify = false` sends none. Those processes are never stopped. Hide and
-  dismissal suppressions apply; closing the popup hides it for `ignore_for_hours`.
+  information notification keyed `other-user:<owner_cgroup>`, with only "Hide..." and no "Stop",
+  "Later", or "Details...". `other_users_notify = false` sends none. Those processes are never stopped.
+  Hide and dismissal suppressions apply; closing the popup hides it for `ignore_for_hours`.
 
 `bin/ramcleaner` locates the package in `../lib/ramcleaner` when installed via `Makefile` or in the
 repository root when run from a checkout.

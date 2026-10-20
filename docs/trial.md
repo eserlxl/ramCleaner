@@ -1,10 +1,10 @@
 # Desktop trial
 
-This guide runs ramCleaner from a git checkout and exercises the notification **Stop**, **Later**, and **Hide...** actions on purpose-built idle processes. It does not use a real workload and does not enable `ramcleaner-watch.timer`.
+This guide runs ramCleaner from a git checkout and exercises the notification **Stop**, **Later**, **Hide...**, and **Details...** actions on purpose-built idle processes. It does not use a real workload and does not enable `ramcleaner-watch.timer`.
 
 Every ramCleaner command below passes `--history-file /tmp/ramcleaner-trial/history.json`. `history.json`, `ignored.json`, and `watch.lock` are created only in that directory. The default state directory (`$XDG_STATE_HOME/ramcleaner`, or `~/.local/state/ramcleaner` when `XDG_STATE_HOME` is unset) is left untouched.
 
-`ramcleaner watch` needs a running notification daemon and `notify-send` with `--action` support. **Hide...** uses `zenity` for the duration menu; without `zenity` that button hides the finding for `ignore_for_hours` and prints one `Warning:` line. Requirements are listed in [installation.md](installation.md).
+`ramcleaner watch` needs a running notification daemon and `notify-send` with `--action` support. **Hide...** uses `zenity` for the duration menu; without `zenity` that button hides the finding for `ignore_for_hours` and prints one `Warning:` line. **Details...** uses `zenity` for one checklist of the stoppable findings in that run. Requirements are listed in [installation.md](installation.md).
 
 ## Throwaway directory
 
@@ -70,7 +70,27 @@ Run `watch` again. Click **Stop** on the trial notification only. Click **Later*
 
 **Stop** does not pass `--force`. The four sleepers should exit. A follow-up notification reports how many processes stopped. In the workload tab, the same PIDs should be gone.
 
-## 3. What to record when the result differs
+## 3. Two findings, then Details
+
+A second terminal tab starts another four of the same sleepers, so the next scan has two idle-clones findings (each tab is its own cgroup):
+
+```sh
+for _ in 1 2 3 4
+do
+python3 -c 'b = bytearray(256 * 1024 * 1024); import time; time.sleep(10**9)' &
+done
+ps -o pid,stat,rss= -p $(jobs -p)
+```
+
+Wait until every row in that tab shows state `S` and an RSS of at least about 262144 KiB. From the checkout shell:
+
+```sh
+./bin/ramcleaner watch --history-file /tmp/ramcleaner-trial/history.json
+```
+
+**Details...** on either notification opens one checklist titled ramCleaner listing both findings. Ticking both and confirming stops both, the same way **Stop** does for a single notification. Cancelling the checklist, closing it, or letting it time out stops nothing from it. An other-user warning, when one is pending, appears in the dialog text only and is not a row. A notification whose finding was stopped from the checklist can stay on screen until closed; its buttons do nothing. **Later** on any other notification from this run records nothing.
+
+## 4. What to record when the result differs
 
 When a step does not match this guide, record:
 

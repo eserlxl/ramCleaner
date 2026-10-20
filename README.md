@@ -26,7 +26,7 @@ ramcleaner report
 
 ## Install
 
-Requires Linux with cgroup v2, Python 3.11+, and `notify-send` (from `libnotify`) for desktop notifications. `zenity` is optional and supplies the Hide duration menu. Install into `~/.local` with `make install PREFIX=~/.local` or system-wide with `sudo make install PREFIX=/usr/local`.
+Requires Linux with cgroup v2, Python 3.11+, and `notify-send` (from `libnotify`) for desktop notifications. `zenity` is optional and supplies the Hide duration menu and the Details checklist. Install into `~/.local` with `make install PREFIX=~/.local` or system-wide with `sudo make install PREFIX=/usr/local`.
 
 See [docs/installation.md](docs/installation.md) for `make` variables, systemd timer setup, and uninstall steps.
 
@@ -44,7 +44,7 @@ Interactively review and stop findings from a terminal:
 ramcleaner clean
 ```
 
-Or run `ramcleaner watch` periodically from the systemd user timer to receive desktop notifications with **Stop**, **Later**, and **Hide...** buttons:
+Or run `ramcleaner watch` periodically from the systemd user timer to receive desktop notifications with **Stop**, **Later**, **Hide...**, and **Details...** buttons:
 
 ```sh
 systemctl --user daemon-reload
@@ -53,7 +53,7 @@ systemctl --user enable --now ramcleaner-watch.timer
 
 ## Safety
 
-- Nothing is stopped without your approval (`y`/`yes` in `ramcleaner clean`, or clicking **Stop** on a `ramcleaner watch` notification).
+- Nothing is stopped without your approval (`y`/`yes` in `ramcleaner clean`, or clicking **Stop** or confirming ticked rows in **Details...** on a `ramcleaner watch` notification).
 - Before sending any signal, a pidfd is opened for each PID and its `/proc/PID` entry is re-checked to confirm its `start_ticks` and `cmdline` still match the scan and that it is not in the protected list (`PID 1`, `ramcleaner`, `systemd`, `kwin_wayland`, `plasmashell`, `ksmserver`, plus `protected` in `config.toml`); signals are sent through that pidfd so a reused PID can never be hit.
 - `SIGTERM` is sent by default; `SIGKILL` is never sent unless `--force` is passed to `ramcleaner clean`.
 - Configured `stop_rules` run the configured graceful stop command (split with `shlex.split`, without a shell) instead of sending signals directly.
@@ -66,7 +66,7 @@ systemctl --user enable --now ramcleaner-watch.timer
 | Document | Description |
 | --- | --- |
 | [docs/installation.md](docs/installation.md) | Requirements, `make` variables and targets, systemd user timer setup, and uninstall. |
-| [docs/trial.md](docs/trial.md) | Desktop trial of report, clean, and notification Stop, Later, and Hide from a checkout, without the default state directory. |
+| [docs/trial.md](docs/trial.md) | Desktop trial of report, clean, and notification Stop, Later, Hide, and Details from a checkout, without the default state directory. |
 | [docs/configuration.md](docs/configuration.md) | `config.toml` path, all configuration keys, types, defaults, and `stop_rules` examples. |
 | [docs/cli-reference.md](docs/cli-reference.md) | Subcommands, options, state files (`history.json`, `ignored.json`, `watch.lock`), and exit statuses. |
 

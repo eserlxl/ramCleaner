@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ramcleaner watch` offers Details... on each stoppable finding. The button opens one zenity checklist of every stoppable finding in that run and stops the ticked ones. Other-user warnings are listed in the dialog text only.
+
 ### Fixed
 
 - A growth finding must already reach `min_growth_mb` in the last recorded scan, so one transient spike in the fresh sample is not enough.
