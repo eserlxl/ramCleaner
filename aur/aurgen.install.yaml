@@ -119,8 +119,8 @@ package:
   depends:
     - 'python>=3.11'
   optdepends:
-    - 'libnotify: Stop/Later/Hide desktop notifications for ramcleaner watch'
-    - 'zenity: Hide duration menu for ramcleaner watch'
+    - 'libnotify: Stop/Later/Hide/Details desktop notifications for ramcleaner watch'
+    - 'zenity: Hide duration menu and Details checklist for ramcleaner watch'
   install_messages:
     post_install:
       - 'ramcleaner: the watch timer is a per-user unit and is not enabled automatically.'

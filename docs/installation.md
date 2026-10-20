@@ -5,7 +5,7 @@
 - Linux >= 5.3 (pidfd) with `/proc` and cgroup v2 mounted at `/sys/fs/cgroup`.
 - Python 3.11 or newer. Only the Python standard library is used.
 - `notify-send` from `libnotify` (`libnotify-bin` on Debian/Ubuntu, `libnotify` on Fedora/Arch) with `--action` support when running `ramcleaner watch`.
-- `zenity` (optional) for the **Hide...** duration menu in `ramcleaner watch`. Without it, **Hide...** suppresses the finding for `ignore_for_hours` and prints one `Warning:` line.
+- `zenity` (optional) for the **Hide...** duration menu and the **Details...** checklist in `ramcleaner watch`. Without it, **Details...** stops nothing and **Hide...** suppresses the finding for `ignore_for_hours` and prints one `Warning:` line.
 - `systemd` user manager when scheduling periodic runs with `ramcleaner-watch.timer`.
 
 ## Install with `make`
