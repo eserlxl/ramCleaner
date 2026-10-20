@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - A growth finding must already reach `min_growth_mb` in the last recorded scan, so one transient spike in the fresh sample is not enough.
+- Other-user information notifications offer only Hide...; Later is omitted because closing the popup already hides the warning for `ignore_for_hours`.
 
 ## [0.1.0] - 2026-10-20
 

@@ -554,7 +554,7 @@ class WatchTest(unittest.TestCase):
         actions = [arg for arg in created[0].argv if arg.startswith("--action=")]
         self.assertEqual(
             actions,
-            ["--action=later=Later", "--action=hide=Hide..."],
+            ["--action=hide=Hide..."],
         )
         self.assertNotIn("--action=stop=Stop", created[0].argv)
         self.assertIn("systemd-journald.service", created[0].argv[-2])

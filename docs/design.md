@@ -36,7 +36,7 @@ whether the nested owner is an unreadable grandchild or an unreadable intermedia
 readable grandchild. The fallback includes file-backed pages. The report appends
 `VmRSS: cgroup memory unreadable` only on the unreadable row, and zswap on that row is 0.
 
-The invoking user's processes are grouped, detected, and the only ones that can be stopped. Processes of every other uid, including root services, are information only: `ramcleaner report` groups them by owner and lists each owner at or above `other_users_min_mb` (default 512 MiB of `VmRSS + VmSwap`) under `Other users (information only):`. They never become findings and are never stopped. When `other_users_notify` is true (the default), `ramcleaner watch` sends an information notification for each such owner, keyed `other-user:<owner_cgroup>`, with Later and Hide... and no Stop action. `other_users_notify = false` sends none. Watch never stops those processes.
+The invoking user's processes are grouped, detected, and the only ones that can be stopped. Processes of every other uid, including root services, are information only: `ramcleaner report` groups them by owner and lists each owner at or above `other_users_min_mb` (default 512 MiB of `VmRSS + VmSwap`) under `Other users (information only):`. They never become findings and are never stopped. When `other_users_notify` is true (the default), `ramcleaner watch` sends an information notification for each such owner, keyed `other-user:<owner_cgroup>`, with Hide... and no Stop or Later action. `other_users_notify = false` sends none. Watch never stops those processes.
 
 ## Owner attribution
 
@@ -142,9 +142,9 @@ Stopping is per finding and only after approval.
   suppresses that finding's key in `ignored.json` for `ignore_for_hours` (default 24 h). Without
   `zenity`, "Hide..." does the same and prints one `Warning:` line. When `other_users_notify` is
   true (the default), each other user's owner at or above `other_users_min_mb` also becomes an
-  information notification keyed `other-user:<owner_cgroup>`, with only "Later" and "Hide..." and
-  no "Stop". `other_users_notify = false` sends none. Those processes are never stopped. The same
-  Later and Hide suppressions apply.
+  information notification keyed `other-user:<owner_cgroup>`, with only "Hide..." and no "Stop" or
+  "Later". `other_users_notify = false` sends none. Those processes are never stopped. Hide and
+  dismissal suppressions apply; closing the popup hides it for `ignore_for_hours`.
 
 `bin/ramcleaner` locates the package in `../lib/ramcleaner` when installed via `Makefile` or in the
 repository root when run from a checkout.

@@ -114,10 +114,16 @@ class NotifySend:
 
         for finding in findings:
             summary, body = _format_notification(finding)
-            # Other-user warnings are information only and must not offer Stop.
-            actions = ["--action=later=Later", "--action=hide=Hide..."]
-            if finding.rule != "other-user":
-                actions.insert(0, "--action=stop=Stop")
+            # Other-user warnings are information only: Hide... only. Closing
+            # the popup already suppresses them for ignore_for_hours.
+            if finding.rule == "other-user":
+                actions = ["--action=hide=Hide..."]
+            else:
+                actions = [
+                    "--action=stop=Stop",
+                    "--action=later=Later",
+                    "--action=hide=Hide...",
+                ]
             argv = [
                 *_BASE_ARGV,
                 f"--expire-time={expire_ms}",
