@@ -169,13 +169,6 @@ class TrialGuideTest(unittest.TestCase):
 
 
 class PackageVersionTest(unittest.TestCase):
-    def test_pkgbuild_and_srcinfo_match_package_version(self) -> None:
-        for name, pattern in (("PKGBUILD", r"^pkgver=(\S+)$"), (".SRCINFO", r"^\tpkgver = (\S+)$")):
-            with self.subTest(file=name):
-                text = (REPO_ROOT / "aur" / name).read_text(encoding="utf-8")
-                found = re.findall(pattern, text, re.MULTILINE)
-                self.assertEqual(found, [ramcleaner.__version__])
-
     def test_changelog_released_headings(self) -> None:
         text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         headings = re.findall(r"^## \[(\d+\.\d+\.\d+)\]", text, re.MULTILINE)
@@ -188,16 +181,22 @@ class PackageVersionTest(unittest.TestCase):
             newest = max(headings, key=version_key)
             self.assertLessEqual(version_key(newest), version_key(ramcleaner.__version__))
 
-    def test_pkgbuild_source_is_a_signed_tag(self) -> None:
-        text = (REPO_ROOT / "aur" / "PKGBUILD").read_text(encoding="utf-8")
-        source = re.search(r'^source=\("([^"]+)"\)$', text, re.MULTILINE)
-        self.assertIsNotNone(source)
-        self.assertTrue(source.group(1).endswith("#tag=v$pkgver?signed"))
-        keys = re.search(r"^validpgpkeys=\(([^)]*)\)$", text, re.MULTILINE)
-        self.assertIsNotNone(keys)
-        fingerprints = re.findall(r"'([^']*)'", keys.group(1))
-        self.assertEqual(len(fingerprints), 1)
-        self.assertRegex(fingerprints[0], r"^[0-9A-Fa-f]{40}$")
+    def test_aurgen_source_is_a_signed_tag(self) -> None:
+        text = (REPO_ROOT / "aur" / "aurgen.install.yaml").read_text(encoding="utf-8")
+        package = text.split("\npackage:\n", 1)[1]
+        self.assertRegex(package, r"(?m)^  source: 'signed-tag'$")
+
+    def test_install_messages_name_the_watch_timer(self) -> None:
+        unit = "ramcleaner-watch.timer"
+        self.assertTrue((REPO_ROOT / "systemd" / unit).is_file())
+        text = (REPO_ROOT / "aur" / "aurgen.install.yaml").read_text(encoding="utf-8")
+        start = text.find("\n  install_messages:\n")
+        end = text.find("\n  post_package:\n", start)
+        self.assertGreaterEqual(start, 0)
+        self.assertGreater(end, start)
+        messages = text[start:end]
+        self.assertIn(f"systemctl --user enable --now {unit}", messages)
+        self.assertIn(f"systemctl --user disable --now {unit}", messages)
 
 
 if __name__ == "__main__":

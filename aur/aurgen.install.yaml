@@ -1,0 +1,133 @@
+# AURGen Configuration File
+# This file contains two main sections:
+# 1. Package Installation: Controls which directories are copied during package installation
+# 2. AUR Integration: Controls AUR repository deployment behavior
+# 
+# Package Installation Section:
+# Each section below defines what gets installed and where
+
+# Package metadata the generator cannot infer. Uncomment what applies.
+# Detected values are kept; entries here are added or win over them.
+# name defaults to the repository name, lowercased; install names a file
+# next to this config in aur/; check is true, false, or a test command;
+# arch defaults to any unless the project compiles; install_vars are extra
+# variables passed to make install. source is release (default), archive, or signed-tag.
+# description replaces the detected pkgdesc. license replaces the detected license.
+# post_package lines are shell code appended to the end of package().
+# package:
+#   name: linux-mytool
+#   install: mytool.install
+#   check: true
+#   source: release
+#   arch: [any]
+#   depends:
+#     - systemd>=249
+#   optdepends:
+#     - "libnotify: desktop notifications"
+#   makedepends: []
+#   conflicts: [mytool]
+#   provides: []
+#   backup:
+#     - etc/mytool/mytool.conf
+#   install_vars:
+#     - UNITDIR=/usr/lib/systemd/system
+#   description: "what the package does"
+#   license: [GPL-3.0-or-later]
+#   post_package: []
+
+# Executable files
+executables:
+  source: bin
+  destination: usr/bin
+  permissions: executable
+  exclude: []
+
+# Library files
+libraries:
+  source: lib
+  destination: usr/lib/$pkgname
+  permissions: read-only
+  exclude: []
+
+# Configuration files
+config:
+  source: etc
+  destination: etc/$pkgname
+  permissions: read-only
+  exclude: []
+
+# Shared data files
+shared_data:
+  source: share
+  destination: usr/share/$pkgname
+  permissions: read-only
+  exclude: []
+
+# Header files
+headers:
+  source: include
+  destination: usr/include/$pkgname
+  permissions: read-only
+  exclude: []
+
+# Local data files
+local_data:
+  source: local
+  destination: usr/local/$pkgname
+  permissions: read-only
+  exclude: []
+
+# Variable data files
+variable_data:
+  source: var
+  destination: var/$pkgname
+  permissions: read-only
+  exclude: []
+
+# Optional data files
+optional_data:
+  source: opt
+  destination: opt/$pkgname
+  permissions: read-only
+  exclude: []
+
+# AUR Integration Configuration
+# This section controls AUR repository deployment behavior
+aur_integration:
+  # Local AUR repositories directory
+  aur_repo_dir: /opt/AUR
+  # Auto-push to AUR after deployment
+  auto_push: true
+  # Commit message template (use {version} for version placeholder)
+  commit_message: "Update to version {version}"
+  # Git user for AUR commits; leave commented so the clone uses the user's git config
+  # git_user_name: "Your Name"
+  # git_user_email: "your.email@example.com"
+  # SSH key for AUR authentication (optional)
+  ssh_key: ~/.ssh/aur_key
+  # Backup existing files before overwriting
+  backup_existing: true
+  # Validate AUR repository before pushing
+  validate_before_push: true
+
+package:
+  name: 'ramcleaner'
+  description: 'Find processes holding unused memory, attribute them to their owner, and stop them only after approval'
+  license:
+    - 'GPL-3.0-or-later'
+  source: 'signed-tag'
+  depends:
+    - 'python>=3.11'
+  optdepends:
+    - 'libnotify: Stop/Later/Hide desktop notifications for ramcleaner watch'
+    - 'zenity: Hide duration menu for ramcleaner watch'
+  install_messages:
+    post_install:
+      - 'ramcleaner: the watch timer is a per-user unit and is not enabled automatically.'
+      - '  Look first:  ramcleaner report'
+      - '  Then enable: systemctl --user enable --now ramcleaner-watch.timer'
+    pre_remove:
+      - 'ramcleaner: users who enabled the watch timer should run'
+      - '  systemctl --user disable --now ramcleaner-watch.timer'
+  post_package:
+    - 'python -m compileall -q -o 0 -o 1 -d /usr/lib/ramcleaner "$pkgdir/usr/lib/ramcleaner"'

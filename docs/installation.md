@@ -45,13 +45,7 @@ sudo make install PREFIX=/usr/local
 
 ## Arch Linux package
 
-The repository ships a `PKGBUILD` in `aur/` for a `ramcleaner` package that installs into `/usr` (the user units go to `/usr/lib/systemd/user`). It is not on the AUR yet. Once the signed release tag is published, `cd aur && makepkg -si` builds and installs it; before that, [packaging.md](packaging.md) shows how to build it locally. The package does not enable the timer: each user enables it as shown below.
-
-Import the maintainer key before building so makepkg can verify the signed tag:
-
-```sh
-gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys 2B0541BF62E91D538C55739DF677BC1E3BD7246E
-```
+AURGen generates the `ramcleaner` package from `aur/aurgen.install.yaml`. It installs into `/usr` (the user units go to `/usr/lib/systemd/user`). It is not on the AUR yet. `aurgen local` builds and installs a local test package; [packaging.md](packaging.md) covers the recipe, the release tag, `aurgen aur`, and `aurgen aur-deploy`. The package does not enable the timer: each user enables it as shown below.
 
 ## Run from a checkout
 
