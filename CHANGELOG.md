@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A growth finding must already reach `min_growth_mb` in the last recorded scan, so one transient spike in the fresh sample is not enough.
+
 ## [0.1.0] - 2026-10-20
 
 ### Added

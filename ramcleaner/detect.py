@@ -172,7 +172,8 @@ def detect(
         if (
             len(sizes) >= 5
             and all(after * 100 >= before * 99 for before, after in pairwise(sizes))
-            and sizes[-1] - sizes[0] >= config.min_growth_mb * 1024
+            # A single fresh sample can be a transient spike.
+            and min(sizes[-2], sizes[-1]) - sizes[0] >= config.min_growth_mb * 1024
             and not _is_browser_child(proc)
         ):
             owner, _ = resolve_owner(proc.cgroup)

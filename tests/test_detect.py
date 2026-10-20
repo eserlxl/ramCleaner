@@ -54,7 +54,7 @@ class DetectTest(unittest.TestCase):
             boot_id=boot_id,
         )
 
-    def growth_history(self, sizes=(100, 200, 300, 400)):
+    def growth_history(self, sizes=(100, 200, 300, 612)):
         return [
             {"time": 1000000 - 400 + index * 100,
              "procs": {"10:100": size * 1024}, "zombies": []}
@@ -177,7 +177,7 @@ class DetectTest(unittest.TestCase):
              "procs": {"10:100": size * 1024, "201:100": size * 1024,
                        "202:100": size * 1024},
              "zombies": []}
-            for index, size in enumerate((100, 200, 300, 400))
+            for index, size in enumerate((100, 200, 300, 612))
         ]
         findings = self.findings(first=first, second=second, history=history)
         self.assertEqual([finding.rule for finding in findings], ["idle-clones", "growth"])
@@ -253,7 +253,7 @@ class DetectTest(unittest.TestCase):
 
     def test_growth(self) -> None:
         proc = replace(self.procs[10], rss_kb=548 * 1024, swap_kb=64 * 1024)
-        for sizes in ((100, 200, 300, 400), (100, 200, 200, 400), (100, 200, 198, 400)):
+        for sizes in ((100, 200, 300, 612), (100, 200, 200, 612), (100, 200, 198, 612)):
             with self.subTest(sizes=sizes):
                 finding, = self.findings(second={10: proc}, history=self.growth_history(sizes))
                 self.assertEqual(finding.rule, "growth")
@@ -262,13 +262,20 @@ class DetectTest(unittest.TestCase):
                 self.assertEqual(finding.procs, (proc,))
                 self.assertIn("512.0 MB", finding.reason)
 
+    def test_growth_ignores_spike_only_in_fresh_sample(self) -> None:
+        proc = replace(self.procs[10], rss_kb=548 * 1024, swap_kb=64 * 1024)
+        self.assertEqual(
+            self.findings(second={10: proc}, history=self.growth_history((100, 200, 300, 400))),
+            [],
+        )
+
     def test_growth_thresholds_and_identity(self) -> None:
         proc = replace(self.procs[10], rss_kb=548 * 1024, swap_kb=64 * 1024)
         history = self.growth_history()
         cases = (
             (history[:3], proc),
-            (self.growth_history((100, 300, 200, 400)), proc),
-            (self.growth_history((100, 200, 197, 400)), proc),
+            (self.growth_history((100, 300, 200, 612)), proc),
+            (self.growth_history((100, 200, 197, 612)), proc),
             (history, replace(proc, rss_kb=547 * 1024)),
             (history, replace(proc, start_ticks=101)),
             ([{**entry, "time": entry["time"] - 86400} for entry in history], proc),

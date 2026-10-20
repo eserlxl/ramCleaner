@@ -74,7 +74,8 @@ with an id, the processes involved, their RSS and swap, and a one-line reason.
    a row; the fix is on the parent, so the finding names the parent.
 3. **Growth.** A process whose RSS + swap grew by at least `min_growth_mb` (default 512) over the
    `history_hours` window (default 24 h, at least 4 recorded scans plus the current sample) with no
-   step shrinking by more than 1 % of the previous size. Chromium and Electron child processes (a
+   step shrinking by more than 1 % of the previous size. The growth must already reach
+   `min_growth_mb` in the last recorded scan. Chromium and Electron child processes (a
    `--type=` argument) and Firefox content processes (`-contentproc`) are excluded. History lives in
    `$XDG_STATE_HOME/ramcleaner/history.json` (default `~/.local/state/ramcleaner/`), pruned to the
    window. When `/proc/sys/kernel/random/boot_id` is readable, growth and zombie persistence use
