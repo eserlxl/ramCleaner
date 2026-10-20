@@ -45,7 +45,7 @@ sudo make install PREFIX=/usr/local
 
 ## Arch Linux package
 
-AURGen generates the `ramcleaner` package from `aur/aurgen.install.yaml`. It installs into `/usr` (the user units go to `/usr/lib/systemd/user`). It is not on the AUR yet. `aurgen local` builds and installs a local test package; [packaging.md](packaging.md) covers the recipe, the release tag, `aurgen aur`, and `aurgen aur-deploy`. The package does not enable the timer: each user enables it as shown below.
+AURGen generates the `ramcleaner` package from `aur/aurgen.install.yaml`. It installs into `/usr` (the user units go to `/usr/lib/systemd/user`). Install it from the AUR with `yay -S ramcleaner` or `paru -S ramcleaner`; from a checkout, `aurgen local` builds and installs a local test package; [packaging.md](packaging.md) covers the recipe, the release tag, `aurgen aur`, and `aurgen aur-deploy`. The package does not enable the timer: each user enables it as shown below.
 
 ## Run from a checkout
 

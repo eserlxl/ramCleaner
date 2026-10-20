@@ -2,7 +2,7 @@
 
 `aur/` tracks `aurgen.install.yaml` for the `ramcleaner` AUR package. AURGen generates the `PKGBUILD`, `.SRCINFO`, and the pacman install scriptlet from that file on every run; `aur/.gitignore` ignores every other file there. `pkgver` comes from the git tag `v<version>`. The scriptlet text is `package.install_messages` (`post_install` and `pre_remove`), printed verbatim. `package.post_package` appends a bytecode compile so a root run cannot leave `__pycache__` files pacman does not track.
 
-The package is **not published yet**. `package.source` is `signed-tag`, so the release build uses the signed `v<version>` git tag. A build from that tag cannot succeed until the repository is public and the signed tag is pushed.
+The package is on the AUR as [`ramcleaner`](https://aur.archlinux.org/packages/ramcleaner). `package.source` is `signed-tag`, so the release build clones the signed `v<version>` git tag and makepkg verifies its signature.
 
 ## Test build before a release
 

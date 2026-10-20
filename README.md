@@ -1,6 +1,7 @@
 # ramCleaner
 
 [![License: GPL v3+](https://img.shields.io/badge/License-GPLv3%2B-blue.svg)](LICENSE)
+[![AUR](https://img.shields.io/aur/version/ramcleaner)](https://aur.archlinux.org/packages/ramcleaner)
 
 ramCleaner finds processes that hold memory they no longer use (idle helper copies a daemon forgot to close, zombies nobody reaps, processes that only grow), attributes them to the application or systemd unit that really owns them, and stops them only after you approve. It never stops anything on its own.
 
@@ -74,7 +75,7 @@ systemctl --user enable --now ramcleaner-watch.timer
 | Path | Description |
 | --- | --- |
 | [docs/design.md](docs/design.md) | Architecture, `/proc` and cgroup v2 data sources, owner attribution, detection rules, and stopping logic. |
-| [docs/packaging.md](docs/packaging.md) | AURGen recipe `aur/aurgen.install.yaml` for the `ramcleaner` AUR package (not published yet), local test, and the release and publish steps. |
+| [docs/packaging.md](docs/packaging.md) | AURGen recipe `aur/aurgen.install.yaml` for the [`ramcleaner`](https://aur.archlinux.org/packages/ramcleaner) AUR package, local test, and the release and publish steps. |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes in Keep a Changelog form; the `[Unreleased]` section is renamed when a version is tagged. |
 | [Makefile](Makefile) | Build, install, uninstall, test, and lint targets. |
 | [tests/](tests/) | Unit and fixture tests (`tests/fakeproc.py` builds synthetic `/proc` and cgroup trees). |
