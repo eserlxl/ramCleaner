@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-20
+
 ### Added
 
 - `ramcleaner report` lists memory by the owning application or systemd unit, then findings for idle clones, unreaped zombies, and growth.
