@@ -94,8 +94,6 @@ optional_data:
 # AUR Integration Configuration
 # This section controls AUR repository deployment behavior
 aur_integration:
-  # Local AUR repositories directory
-  aur_repo_dir: /opt/AUR
   # Auto-push to AUR after deployment
   auto_push: true
   # Commit message template (use {version} for version placeholder)

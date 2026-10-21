@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-22
+
+### Added
+
+- `make check-package` runs the test suite hermetically (empty environment, no home, `LC_ALL=C`); the AUR package's `check()` runs it on every build.
+
+### Changed
+
+- The libnotify and zenity optional dependencies name the Details checklist they enable.
+
 ## [0.2.0] - 2026-10-20
 
 ### Added
