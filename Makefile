@@ -8,7 +8,7 @@ DESTDIR ?=
 
 PY_FILES := $(wildcard ramcleaner/*.py)
 
-.PHONY: install uninstall test check lint
+.PHONY: install uninstall test check-package lint
 
 install:
 	@python3 -c 'import os, sys; exp = os.path.normpath(os.path.join(sys.argv[1], "..", "lib", "ramcleaner")); act = os.path.normpath(sys.argv[2]); sys.exit(0 if act == exp else f"Error: LIBDIR ({act}) must be {exp} relative to BINDIR ({sys.argv[1]})")' "$(BINDIR)" "$(LIBDIR)"
@@ -33,8 +33,10 @@ uninstall:
 test:
 	python3 -B -m unittest discover -s tests
 
-# Package-time suite for makepkg check(); the whole suite needs no git, network, root, home or live system state.
-check: test
+# Hermetic suite for makepkg check(): the whole suite needs no git, network, root, home or live system state.
+# HOME=/nonexistent makes any home write fail instead of landing in the builder's home.
+check-package:
+	env -i PATH="$$PATH" HOME=/nonexistent LC_ALL=C python3 -B -m unittest discover -s tests
 
 lint:
 	ruff check --target-version py311 ramcleaner tests bin/ramcleaner

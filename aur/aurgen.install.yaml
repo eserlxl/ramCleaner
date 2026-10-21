@@ -116,7 +116,7 @@ package:
   license:
     - 'GPL-3.0-or-later'
   source: 'signed-tag'
-  check: 'make check'
+  check: 'make check-package'
   depends:
     - 'python>=3.11'
   optdepends:
